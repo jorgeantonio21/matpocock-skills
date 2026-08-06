@@ -25,6 +25,8 @@ The route most work travels. You have an idea and want it built.
 
    Either way, **`/implement`** builds each issue by driving **`/tdd`** internally — one red-green slice at a time — then closes out by running **`/code-review`**, a two-axis review (Standards + Spec) of the diff, before committing. Reach for **`/tdd`** on its own when you just want to build a concrete behaviour test-first without a full spec, and **`/code-review`** on its own whenever you want to review a branch or PR against a fixed point.
 
+   **Branch — does a human read every commit?** `/implement` lands a ticket as one diff and commits at the end. **`/implement-by-commit`** plans the ticket as a sequence of commits instead — each green and reviewable on its own — and stops at a **gate** before every one: it presents the diff and a suggested message, you approve, it commits, then it takes the next. Same `/tdd` inside and the same `/code-review` at the close; it just moves your review from the end of the ticket to the end of each commit. Reach for it when the work lands in front of a human reviewer, or when catching a wrong turn at commit two beats catching it at the end.
+
 ### Context hygiene
 
 Keep steps 1–3 in **one unbroken context window** — don't compact or clear until after `/to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/implement` then starts fresh, working from the ticket.
