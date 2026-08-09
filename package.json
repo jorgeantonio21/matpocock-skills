@@ -3,6 +3,10 @@
   "version": "1.2.3",
   "private": true,
   "description": "Matt Pocock's agent skills for real engineering",
+  "keywords": ["pi-package", "agent-skills"],
+  "pi": {
+    "skills": ["./skills/engineering", "./skills/productivity"]
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/mattpocock/skills"

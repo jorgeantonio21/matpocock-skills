@@ -59,6 +59,19 @@ A native Codex plugin is on the roadmap — see [`.agents/adr/0002-ship-as-a-cla
 </details>
 
 <details>
+<summary><strong>Pi</strong></summary>
+
+Install the promoted skills as a Pi package:
+
+```bash
+pi install git:github.com/mattpocock/skills
+```
+
+Pi registers the skills as `/skill:<name>` commands and can also invoke model-reachable skills automatically.
+
+</details>
+
+<details>
 <summary><strong>For tinkerers</strong></summary>
 
 Use the same installer, on any agent — including Claude Code:
