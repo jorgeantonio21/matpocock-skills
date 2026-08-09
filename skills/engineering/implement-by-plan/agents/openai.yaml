@@ -1,0 +1,5 @@
+interface:
+  display_name: "Implement by Plan"
+  short_description: "Agree a commit plan, then land the sequence unattended"
+policy:
+  allow_implicit_invocation: false
