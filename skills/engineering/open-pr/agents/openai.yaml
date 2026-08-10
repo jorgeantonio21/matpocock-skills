@@ -1,0 +1,5 @@
+interface:
+  display_name: "Open PR"
+  short_description: "Ship the current branch's commits as a pull request"
+policy:
+  allow_implicit_invocation: false

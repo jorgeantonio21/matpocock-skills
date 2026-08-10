@@ -214,6 +214,7 @@ Skills I use daily for code work.
 - **[implement](./skills/engineering/implement/SKILL.md)** — Build the work described by a spec or set of tickets, driving `/tdd` at pre-agreed seams and closing out with `/code-review` before committing.
 - **[implement-by-commit](./skills/engineering/implement-by-commit/SKILL.md)** — Build the same work as a planned sequence of human-reviewable commits, stopping at a gate before each one so you review and approve it before it lands.
 - **[implement-by-plan](./skills/engineering/implement-by-plan/SKILL.md)** — The same planned sequence of commits as `implement-by-commit`, with the gates removed: you approve the commit plan up front, then the whole sequence lands in one unattended run.
+- **[open-pr](./skills/engineering/open-pr/SKILL.md)** — Ship the commits on the current branch as a pull request: repo checks first, a rescue off `main` onto a properly named branch, a body drawn from the diff alone, and one gate before anything outward-facing happens.
 - **[wayfinder](./skills/engineering/wayfinder/SKILL.md)** — Plan a huge chunk of work, more than one agent session can hold, as a shared map of decision tickets on the issue tracker — resolve them one at a time until the way to the destination is clear.
 
 **Model-invoked**

@@ -27,6 +27,8 @@ The route most work travels. You have an idea and want it built.
 
    **Branch — how much do you want to review?** `/implement` lands a ticket as one diff and commits at the end. **`/implement-by-commit`** plans the ticket as a sequence of commits instead — each green and reviewable on its own — and stops at a **gate** before every one: it presents the diff and a suggested message, you approve, it commits, then it takes the next. **`/implement-by-plan`** builds the same commit sequence with the gates removed: you review the plan once, before any code exists, then the run goes unattended to the last commit, stopping only if the work proves the plan wrong. Same `/tdd` inside and the same `/code-review` at the close, whichever you pick. Reach for `/implement-by-commit` when catching a wrong turn at commit two beats catching it at the end; for `/implement-by-plan` when you want a history a reviewer can walk commit by commit but you won't sit at the gates to get it; for `/implement` when the resulting history matters to nobody.
 
+   None of the three opens a pull request — each ends at commits on the branch you are on. When the work ships as a PR, **`/open-pr`** is the step after the build: it rescues commits stranded on `main` onto a properly named branch, asks which repo and base the PR targets, drafts the body from the diff alone, and stops at one **gate** before anything outward-facing happens.
+
 ### Context hygiene
 
 Keep steps 1–3 in **one unbroken context window** — don't compact or clear until after `/to-tickets` — so the grilling, spec, and tickets all build on the same thinking. Each `/implement` then starts fresh, working from the ticket.
