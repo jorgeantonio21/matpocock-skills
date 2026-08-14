@@ -1,5 +1,29 @@
 # mattpocock-skills
 
+## 1.3.0
+
+### Minor Changes
+
+- [`86c8841`](https://github.com/mattpocock/skills/commit/86c88411c9d40d5eafff8f57127409cac9f3234c) Thanks [@jorgeantonio21](https://github.com/jorgeantonio21)! - Add **`ask-jorge`**, this fork's router — `ask-matt`'s map extended with the skills the fork adds on top of upstream (`implement-by-commit`, `implement-by-plan`, `open-pr`). `ask-matt` and its docs page are restored byte-identical to upstream `mattpocock/skills` and stay frozen, so upstream merges never conflict on them; route changes land in `ask-jorge`.
+
+- [`9ba0768`](https://github.com/mattpocock/skills/commit/9ba07680a4521d11c6aef96601ec40eaf3096805) Thanks [@jorgeantonio21](https://github.com/jorgeantonio21)! - Add **`implement-by-commit`**, a user-invoked engineering skill that builds a spec or ticket as a planned sequence of human-reviewable commits rather than one. It agrees a commit plan up front and writes it to `.scratch/<feature-slug>/commits.md`, then builds the commits in order — driving `/tdd` at the agreed seams, and stopping at a **gate** before each one to present what it built and a suggested message. Feedback folds into the commit under review; `git commit` runs only on approval, and messages carry no trailer lines. `/code-review` runs once at close-out over the whole landed sequence, by which point every commit is in `HEAD` and inside the reviewed diff.
+
+  `ask-matt` routes to it beside `/implement`, picked on whether a human reads every commit, and it has a docs page at `docs/engineering/implement-by-commit.md`.
+
+- [`f0372a9`](https://github.com/mattpocock/skills/commit/f0372a9fb9cc5219a556caec40f0b52e1c96dc1d) Thanks [@jorgeantonio21](https://github.com/jorgeantonio21)! - Add **`implement-by-plan`**, a user-invoked engineering skill that builds a spec or ticket as the same planned sequence of commits as `implement-by-commit`, with the gates removed. The plan is the **contract**: agreed up front — slicing, order, open decisions, target branch — and written to `.scratch/<feature-slug>/commits.md`. Once approved, the run goes unattended to the last commit, driving `/tdd` at the agreed seams and ticking each commit off as it lands; every commit is green on its own, and messages carry no trailer lines. The only interrupt is **drift** — work that proves the plan wrong stops the run to re-agree it. `/code-review` runs once at close-out over the whole landed sequence.
+
+  `ask-matt` routes to it between `/implement` and `/implement-by-commit`, picked on how much you want to review — nothing, the plan once, or every commit — and it has a docs page at `docs/engineering/implement-by-plan.md`.
+
+- [`ce2be33`](https://github.com/mattpocock/skills/commit/ce2be330116bd722ff6ac5ec44b8ba959dd1f554) Thanks [@jorgeantonio21](https://github.com/jorgeantonio21)! - Add **`open-pr`**, a user-invoked engineering skill that ships the commits on the current branch as a pull request. It runs the repo's own checks before anything is pushed, rescues commits stranded on `main` onto a `<type>/ja/<short-description>` branch, and asks which repo and base the PR targets rather than inheriting `gh`'s fork default. The title and body are drafted from the diff alone — plain, factual, no trailer lines — and one **gate** shows the PR exactly as it will appear before it is pushed and created. The run ends at the PR's URL; the merge stays with the reviewer.
+
+  `ask-matt` routes to it as the step after the build skills, which commit to the current branch and have no PR mode, and it has a docs page at `docs/engineering/open-pr.md`.
+
+- [`1667d60`](https://github.com/mattpocock/skills/commit/1667d60198bb3bdaeec58a328f6dc7283f7096da) Thanks [@jorgeantonio21](https://github.com/jorgeantonio21)! - Expose the promoted engineering and productivity skills as a Pi package.
+
+### Patch Changes
+
+- [#848](https://github.com/mattpocock/skills/pull/848) [`f02e2ed`](https://github.com/mattpocock/skills/commit/f02e2ed3624d031272f8547742d23bf6bca8b072) Thanks [@mattpocock](https://github.com/mattpocock)! - domain-modeling: trigger on discussing codebase terminology and on writing or editing a CONTEXT.md or an ADR directly, replacing the narrower "pin down domain terminology or a ubiquitous language" / "record an architectural decision" phrasing. Also drops the "another skill needs to maintain the domain model" caveat — that's the invoking skill's job to state explicitly, not this description's.
+
 ## 1.2.3
 
 ### Patch Changes
