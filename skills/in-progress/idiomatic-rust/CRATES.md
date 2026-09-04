@@ -1,10 +1,10 @@
 # Crates
 
-Reached when about to hand-write an impl a crate would derive: each entry names the hand-written form, the derive or type that retires it, the hot-path cost, whether `zll_core` already pays for the crate, and the `SKILL.md` section it serves. Reach for these when writing new code; adding a dependency to a repo is a per-PR call, and nothing here instructs a migration.
+Read this file when you are about to write an impl by hand that a crate would derive. Each entry says which derive or type to use, what not to write by hand, the hot-path cost, and the `SKILL.md` section it serves. Use these crates when you write new code. A new dependency in a repository is a per-PR decision. This file does not instruct a migration.
 
 ## Adopt
 
-- **`derive_more` 2.1.** A newtype carrying hand-written `Display`, `From`, `Into`, `FromStr` that each forward to the inner field. → `#[derive(Display, From, Into, FromStr)]`, one cargo feature per derive; `From` inbound only when every inner value is valid, otherwise `Into` outbound plus a `const fn new`. The `Deref` derive is for smart pointers and owning collections, never a newtype. Expansion is the hand-written code, hot-path safe. New to `zll_core`. Shape.
+- **`derive_more` 2.1.** Use `#[derive(Display, From, Into, FromStr)]` on a newtype. Do not write the delegating impls by hand. Enable one cargo feature per derive. Derive `From` inbound only when every inner value is valid. Otherwise derive `Into` outbound and write a `const fn new`. Do not derive `Deref` on a newtype. `Deref` is for smart pointers and owning collections. The expansion is the hand-written code, so it is hot-path safe. Section: Shape.
 
   ```rust
   pub struct OrderId(u64);
@@ -20,7 +20,7 @@ Reached when about to hand-write an impl a crate would derive: each entry names 
   pub struct OrderId(u64);
   ```
 
-- **`strum` 0.28.** A unit enum with a hand-written `ALL` array, a `COUNT` const, and a match-table `FromStr`. → `#[derive(VariantArray, EnumCount, EnumString, Display)]` with `#[strum(serialize_all = "lowercase")]`; `VariantArray` (a `'static` slice) over `EnumIter` (allocates an iterator struct); `EnumDiscriminants` for enums with payloads. `ParseError` carries no payload, hot-path safe. Already in `zll_core`. Shape.
+- **`strum` 0.28.** Use `#[derive(VariantArray, EnumCount, EnumString, Display)]` with `#[strum(serialize_all = "lowercase")]` on a unit enum. Do not write an `ALL` array, a `COUNT` const, or a match-table `FromStr` by hand. Use `VariantArray`, which is a `'static` slice. Do not use `EnumIter`, which allocates an iterator struct. Use `EnumDiscriminants` for an enum with payloads. `ParseError` carries no payload, so it is hot-path safe. Section: Shape.
 
   ```rust
   pub enum Side { Buy, Sell }
@@ -38,7 +38,7 @@ Reached when about to hand-write an impl a crate would derive: each entry names 
   // Side::VARIANTS, Side::COUNT, "buy".parse::<Side>()
   ```
 
-- **`bon` 3.10.** A config struct under `derive_builder` plus a `validator` pass, with a runtime `Result` from `build()` and a `.validate()` the caller can forget. → `#[bon::bon] impl` with `#[builder]` on `new`: a missing required member is a compile error, and a fallible `new` becomes a fallible `build()` for free, so validation lives in `new` and the fields stay private. Typestate builder with one generic per required member, so compile time grows with members: config-sized structs only, zero runtime cost. New to `zll_core`, alternative to `derive_builder`. Surface.
+- **`bon` 3.10.** Use `#[bon::bon]` on the impl block and `#[builder]` on `new` for a config struct. Do not use `derive_builder` with a `validator` pass, which gives a runtime `Result` from `build()` and a `.validate()` call the caller can forget. With `bon`, a missing required member is a compile error. A fallible `new` becomes a fallible `build()`, so validation lives in `new` and the fields stay private. The builder is a typestate with one generic per required member, so compile time grows with the member count. Use it for config-sized structs only. The runtime cost is zero.. Section: Surface.
 
   ```rust
   #[derive(Builder, Validate)]
@@ -58,9 +58,9 @@ Reached when about to hand-write an impl a crate would derive: each entry names 
   }
   ```
 
-- **`thiserror` 2, `anyhow` 1.** Kept as the one library/application error convention; the rules live under Shape in `SKILL.md`. Expansion is the hand-written `Display`, `source`, and `From`, hot-path safe. Already in `zll_core`. Shape, Words.
+- **`thiserror` 2, `anyhow` 1.** Keep them as the one error convention: `thiserror` in a library, `anyhow` in a binary and in tests. The rules are in the Errors section of `SKILL.md`. The expansion is the hand-written `Display`, `source`, and `From`, so it is hot-path safe. Section: Errors.
 
-- **`tokio-util` 0.7 (`CancellationToken`, `TaskTracker`) with `tokio::task::JoinSet`.** Async shutdown through an `Arc<AtomicBool>` polled in loops or a broadcast-of-unit channel, and a `Vec<JoinHandle>` joined in a loop. → `CancellationToken` selected in every task, `TaskTracker` for workers whose result is `()`, `JoinSet` when results are read; `child_token()` scopes cancellation per subsystem. An `AtomicBool` read by a sync OS thread stays correct; the rule is scoped to tasks. No proc macro. Already in `zll_core`. Runtime.
+- **`tokio-util` 0.7 (`CancellationToken`, `TaskTracker`) with `tokio::task::JoinSet`.** Select on a `CancellationToken` in every task. Use `TaskTracker` for workers whose result is `()`. Use `JoinSet` when you read the results. Use `child_token()` to scope cancellation per subsystem. Do not poll an `Arc<AtomicBool>` in an async loop. Do not signal shutdown with a broadcast channel of `()`. Do not join a `Vec<JoinHandle>` in a loop. An `AtomicBool` that a sync OS thread reads is correct. No proc macro. Section: Runtime.
 
   ```rust
   let shutdown = Arc::new(AtomicBool::new(false));
@@ -78,7 +78,7 @@ Reached when about to hand-write an impl a crate would derive: each entry names 
   tracker.close(); tracker.wait().await;
   ```
 
-- **`rstest` 0.26.** A test table looped inside one `#[test]`, reporting one failure for the whole table, and a `fn setup()` called at the top of every test. → `#[rstest]` with one `#[case::name(..)]` per row and a `#[fixture] fn engine() -> Engine` resolved by argument name; each case is its own named test under nextest. Dev-dependency, proc-macro cost on test targets only. New to `zll_core`. Words (tests).
+- **`rstest` 0.26.** Use `#[rstest]` with one `#[case::name(..)]` per input row. Use `#[fixture] fn engine() -> Engine`, which rstest resolves by argument name. Each case is then its own named test under nextest. Do not loop a test table inside one `#[test]`, which reports one failure for the whole table. Do not call a `fn setup()` at the top of every test. Dev-dependency, so the proc-macro cost lands on test targets only. Section: Words (tests).
 
   ```rust
   #[test]
@@ -98,7 +98,7 @@ Reached when about to hand-write an impl a crate would derive: each entry names 
   }
   ```
 
-- **`num_enum` 0.7.** A `#[repr(u8)]` wire enum with a hand-written `TryFrom<u8>` match table and `as u8` casts. → `#[derive(IntoPrimitive, TryFromPrimitive)]`; `#[num_enum(catch_all)]` on an `Unknown(u8)` variant for a forward-compatible protocol. Decode boundaries only: a zerocopy struct keeps the raw `u8` field and converts at the edge. Expansion is the same match, `no_std`, the error carries only the offending value, hot-path safe. New to `zll_core`. Shape.
+- **`num_enum` 0.7.** Use `#[derive(IntoPrimitive, TryFromPrimitive)]` on a `#[repr(u8)]` wire enum. Do not write a `TryFrom<u8>` match table or an `as u8` cast by hand. Add `#[num_enum(catch_all)]` on an `Unknown(u8)` variant for a forward-compatible protocol. Use it at decode boundaries only. A zerocopy struct keeps the raw `u8` field and converts at the edge. The expansion is the same match, the crate is `no_std`, and the error carries only the offending value, so it is hot-path safe. Section: Shape.
 
   ```rust
   #[repr(u8)] pub enum MsgType { NewOrder = 1, Cancel = 2 }
@@ -115,65 +115,48 @@ Reached when about to hand-write an impl a crate would derive: each entry names 
   pub enum MsgType { NewOrder = 1, Cancel = 2 }
   ```
 
-- **`serde_with` 3.** `deserialize_with = "helper"` functions and `#[serde(with = "..")]` modules accumulating in a config crate, and `skip_serializing_if` repeated per field. → `#[serde_as]` with `DurationSeconds<u64>`, `DisplayFromStr` (reuses the type's `FromStr`/`Display`), `Bytes` for arrays past 32 elements; `#[skip_serializing_none]` once at struct level. Config and API crates only; the attribute macro rewrites the struct and the adapter set is large, so wire crates keep plain serde. New to `zll_core`. Surface.
+- **`serde_with` 3.** Use `#[serde_as]` with `DurationSeconds<u64>`, `DisplayFromStr` (which reuses the type's `FromStr` and `Display`), and `Bytes` for arrays past 32 elements, in config and API crates. Use `#[skip_serializing_none]` once at struct level. Do not write `deserialize_with = "helper"` functions, `#[serde(with = "..")]` modules, or `skip_serializing_if` on every field. Do not use it in a wire crate. The attribute macro rewrites the struct, and the adapter set is large. Section: Surface.
 
-- **`delegate` 0.13.** A wrapper whose methods each forward to one field. → `delegate! { to self.field { pub fn len(&self) -> usize; .. } }`: signatures stay written and greppable, bodies go. Four or more forwarded methods; below that, write the bodies. Expansion is the direct call with `#[inline]`, hot-path safe. New to `zll_core`. Surface.
+- **`delegate` 0.13.** Use `delegate! { to self.field { pub fn len(&self) -> usize; .. } }` when a wrapper forwards four or more methods to one field. The signatures stay written and greppable. Below four methods, write the bodies by hand. The expansion is the direct call with `#[inline]`, so it is hot-path safe. Section: Surface.
 
-- **`insta` 1.48.** A long literal `assert_eq!` on wire-frame bytes or an order-book dump. → `assert_snapshot!(hexdump(&frame.encode()))` stored as a `.snap` beside the test and reviewed with `cargo insta review`; redactions for timestamps and ids. Encodings, state after a scenario, CLI and config rendering; scalars keep `assert_eq!`. Dev-dependency. New to `zll_core`. Words (tests).
+- **`insta` 1.48.** Use `assert_snapshot!(hexdump(&frame.encode()))` for a wire encoding, the state after a scenario, or a CLI or config rendering. The snapshot is a `.snap` file beside the test. Review it with `cargo insta review`. Use redactions for timestamps and ids. Do not write a long literal `assert_eq!` on bytes or on a dump. Keep `assert_eq!` for scalars. Dev-dependency. Section: Words (tests).
 
-- **`itertools` 0.15.** An index-arithmetic loop over adjacent pairs, run-grouping with state variables, a k-way merge loop, `next().unwrap()` on an expected-single result. → `tuple_windows`, `chunk_by` (sorted input), `kmerge`, `exactly_one`, `format_with`; std first where it exists (`slice::chunk_by`, `Iterator::is_sorted`, `inspect`); a typed `collect()` over `collect_vec()`. No proc macro; the named set is zero-cost, while `sorted_*`, `unique`, `counts`, `into_group_map` allocate and belong in tests and cold paths. Already in `zll_core`. Flow.
+- **`itertools` 0.15.** Use `tuple_windows` for adjacent pairs, `chunk_by` for runs in sorted input, `kmerge` for a k-way merge, `exactly_one` for an expected single result, and `format_with` for lazy formatting. Do not write an index-arithmetic loop, a run-grouping loop with state variables, or `next().unwrap()` for these. Use a std method first where one exists: `slice::chunk_by`, `Iterator::is_sorted`, `inspect`. Write a typed `collect()`. Do not use `collect_vec()`. The named set is zero-cost. `sorted_*`, `unique`, `counts`, and `into_group_map` allocate, so use them in tests and cold paths only. Section: Flow.
 
-- **`pretty_assertions` 1.4.** An `assert_eq!` on a struct whose failure prints two `Debug` walls. → `use pretty_assertions::assert_eq;` at the top of `mod tests` for a coloured diff; its `assert_matches!` for pattern asserts. Dev-dependency, retires nothing. New to `zll_core`. Words (tests).
+- **`pretty_assertions` 1.4.** Write `use pretty_assertions::assert_eq;` at the top of `mod tests`. A failed `assert_eq!` then prints a diff instead of two `Debug` dumps. Use its `assert_matches!` for a pattern assert. Dev-dependency. Section: Words (tests).
 
 ## Adopt for one condition
 
-All new to `zll_core` except `pin-project-lite`, already compiled as a tokio dependency.
-
-- **Credentials loaded from config** → `secrecy` 0.10 `SecretString`: `Debug` prints `[REDACTED]`, every read is a greppable `expose_secret()`, memory is zeroised on drop. One `Box` per secret at load time.
-- **Engine-side entities needing stable handles, where no tested arena exists** → `slotmap` 1.1 `SlotMap<Key, T>` with `new_key_type!`: generational keys, O(1) insert, get, remove, no ABA reuse. Declarative macro, hot-path safe.
-- **A map that is serialised, snapshotted, or replayed** → `indexmap` 2.14: insertion-order iteration, identical output every run; `dashmap` stays for concurrency and `BTreeMap` for sorting.
-- **Typestate and marker generics** → `derive-where` 1.6: `Clone`, `Copy`, `PartialEq`, `Debug` on `Handle<T>(u32, PhantomData<T>)` with no `T:` bound.
-- **A zero-copy `str` or slice newtype view** → `ref-cast` 1.0 `#[derive(RefCast)]` on a `#[repr(transparent)]` newtype: `Symbol::ref_cast(s)` with no copy and no `unsafe` in your code.
-- **A field that is a set of named bits** → `bitflags` 2.13 `bitflags!`: declarative, `#[repr(transparent)]` allowed inside, `from_bits_retain` keeps unknown bits for forward compatibility.
-- **A manual `Future` or `Stream` impl** → `pin-project-lite` 0.2 `pin_project!` with `#[pin]` fields and `self.project()`, declarative; `pin-project` only for a feature it lacks.
-- **A fuzz target on a wire decoder or the WAL reader** → `arbitrary` 1.4 `#[derive(Arbitrary)]`; a different trait from proptest's `Arbitrary`, the two coexist behind separate derives.
+- When a credential is loaded from config, use `secrecy` 0.10 `SecretString`. Its `Debug` prints `[REDACTED]`, every read is a greppable `expose_secret()`, and the memory is zeroed on drop. The cost is one `Box` per secret at load time.
+- When engine-side entities need stable handles and no tested arena exists, use `slotmap` 1.1 `SlotMap<Key, T>` with `new_key_type!`. The keys are generational, so a removed key is never reused. Insert, get, and remove are O(1). The macro is declarative, so it is hot-path safe.
+- When a map is serialized, snapshotted, or replayed, use `indexmap` 2.14. It iterates in insertion order, so the output is identical on every run. Keep `dashmap` for concurrency and `BTreeMap` for sorting.
+- When a struct has a typestate or marker type parameter, use `derive-where` 1.6. It derives `Clone`, `Copy`, `PartialEq`, and `Debug` on `Handle<T>(u32, PhantomData<T>)` without a bound on `T`.
+- When you need a zero-copy view of a `str` or slice as a newtype, use `ref-cast` 1.0. Put `#[derive(RefCast)]` on a `#[repr(transparent)]` newtype. `Symbol::ref_cast(s)` then makes the view with no copy and no `unsafe` in your code.
+- When a field is a set of named bits, use `bitflags` 2.13 `bitflags!`. The macro is declarative, it accepts `#[repr(transparent)]` inside, and `from_bits_retain` keeps unknown bits for forward compatibility.
+- When you write a `Future` or `Stream` impl by hand, use `pin-project-lite` 0.2 `pin_project!` with `#[pin]` fields and `self.project()`. It is declarative and it is already in the dependency tree of tokio. Use `pin-project` only for a feature that `pin-project-lite` lacks.
+- When you write a fuzz target for a wire decoder or a log reader, use `arbitrary` 1.4 `#[derive(Arbitrary)]`. Its `Arbitrary` trait is a different trait from proptest's, and the two coexist behind separate derives.
 
 ## Overlap rules
 
-- `derive_more::Display` for anything with a format string; `strum::Display` for a unit enum.
-- `serde_repr` for a serde-facing repr enum; `num_enum` for raw-byte decode; an enum crossing both boundaries takes `num_enum` plus `#[serde(into = "u8", try_from = "u8")]`. Never `serde_repr`, `strum::FromRepr`, and `num_enum` together on one enum.
+- Use `derive_more::Display` for a type with a format string. Use `strum::Display` for a unit enum.
+- Use `serde_repr` for a repr enum that serde reads and writes. Use `num_enum` for a repr enum that raw bytes decode. When one enum crosses both boundaries, use `num_enum` plus `#[serde(into = "u8", try_from = "u8")]`. Do not put `serde_repr`, `strum::FromRepr`, and `num_enum` together on one enum.
 
 ## Skip
 
-- `typed-builder`, `derive_builder`: missing fields surface at runtime or as deprecation warnings, no fallible finish. `bon`.
-- `derive-new`, `smart-default`: positional `new` and per-field defaults that std `#[default]` and a hand-written `impl Default` already spell out. Std; `derive_more::Constructor` for the positional `new`.
-- `educe`: per-field `Debug` skipping and custom `Hash`/`Ord` methods, more power than a generics-aware derive needs. `derive-where`.
-- `ambassador`, `enum_dispatch`: a cross-module macro import ritual, and proc-macro global state that breaks under some incremental builds. Write the match, or make the caller generic.
-- `static_assertions`: last shipped 2019. `const _: () = assert!(..)` (std since 1.57); for `Send + Sync`, `const _: () = { const fn assert_send_sync<T: Send + Sync>() {} assert_send_sync::<Engine>(); };`.
-- `nonempty`, `nunny`, `mitsein`: head-plus-`Vec` layout with no contiguous slice view, or one maintainer with a download count four orders of magnitude below the rest. A private `struct Batch(Vec<T>)` with a `first()` returning `&T` and a constructor rejecting empty input; `nunny` once a non-empty slice type appears in three or more signatures.
-- `bounded-integer`, `konst`, `parse-display`, `enum-iterator`: a niche the hand-written type does without, compile-time string parsing nothing here does, a regex-backed `FromStr`, and a `strum` duplicate. Hand-written `const fn new -> Option`, `derive_more::Display`, `strum::VariantArray`.
-- `enumset`: a second flags crate from one maintainer. `bitflags`.
-- `tap`, `extend`: a prelude import per file for `.pipe`, and an extension trait whose name is hidden from grep. Std `inspect` and `inspect_err`; a hand-written `<Type>Ext` trait.
-- `validator`, `garde`, `serde_valid`: a post-construction `.validate()` a caller can skip and serde never runs. `bon` `new` plus typed fields; `#[serde(try_from = "RawConfig")]` for a check spanning fields.
-- `color-eyre`, `snafu`, `miette`, `displaydoc`, `error_set`: a second error convention. `thiserror` plus `anyhow`.
-- `test-case`, `assert_matches`, `googletest`, `expect-test`, `similar-asserts`: a second test vocabulary. `rstest`, `pretty_assertions` (its `assert_matches!`), `insta`.
-- `divan`: a second benchmark harness. `criterion`, already present.
-- `ordered-float`: prices and quantities are `rust_decimal`. `f64::total_cmp`; `NotNan` only if an `f64` ever keys a `BTreeMap`.
-- `nutype` 0.7: rejects every non-doc attribute on the struct, so `#[repr(transparent)]`, `#[derive(zerocopy::FromBytes)]`, and `#[serde(transparent)]` cannot combine with it, and it cannot wrap a wire type. Hand-written `const fn new -> Option<Self>`; once 0.8 ships attribute passthrough, a config-boundary newtype (port, symbol, bounded size) may take `#[nutype(validate(..))]`, whose `try_new` also runs inside `Deserialize`.
-
-## The workspace today
-
-Facts an agent may cite in a review; whether any of them changes is a per-PR call.
-
-- `eyre` appears in one file and one manifest, `settlement_circuit`, where it arrives with `openvm`; `anyhow` is the application error type everywhere else.
-- `flume` is declared in the workspace and imported nowhere; `crossbeam-channel` is present.
-- `derive_builder` is in six crates and `validator` in twelve; together they do what `bon` does alone, with a runtime `Result` on `build()` and a `.validate()` call a caller can skip.
-- `strum` is imported in 97 files with `VariantArray`, `EnumCount`, `FromRepr`, `EnumIter`, `AsRefStr`, `IntoStaticStr` in use; two `ALL` arrays remain hand-written, at `matching_engine/src/version_gates.rs:56` and `types/src/requests.rs:740`.
-- Nine hand-written `Display` and `FromStr` impls live in `primitives/src/id.rs` and `price_and_positions.rs`.
-- `itertools` is imported in two files.
-- `AtomicBool` shutdown flags at `wal/src/io_thread.rs:23` (a sync OS thread) and `market_data_gateway/src/server.rs:761` (async cancellation bridged to a sync loop, with a comment saying so) are correct.
-- `Vec<JoinHandle>` occurs once, at `market_data_router/src/private/emitter.rs:211`, behind a `Mutex`, holding OS-thread handles.
-- `mockall` is present; the house rule is mock boundaries, not logic.
-- `uuid` and `ulid` coexist; the split is external versus internal id.
+- Do not use `typed-builder` or `derive_builder`. A missing field surfaces at runtime or as a deprecation warning, and there is no fallible finish. Use `bon`.
+- Do not use `derive-new` or `smart-default`. Std `#[default]` and a hand-written `impl Default` already spell out the defaults. Use `derive_more::Constructor` for a positional `new`.
+- Do not use `educe`. It offers per-field `Debug` skipping and custom `Hash` and `Ord` methods, which is more power than a generics-aware derive needs. Use `derive-where`.
+- Do not use `ambassador` or `enum_dispatch`. One needs a cross-module macro import in every user, and the other relies on proc-macro global state that breaks under some incremental builds. Write the match, or make the caller generic.
+- Do not use `static_assertions`. It last shipped in 2019. Write `const _: () = assert!(..);`, which std supports since 1.57. For `Send + Sync`, write `const _: () = { const fn assert_send_sync<T: Send + Sync>() {} assert_send_sync::<Engine>(); };`.
+- Do not use `nonempty`, `nunny`, or `mitsein` by default. `nonempty` stores a head plus a `Vec`, so there is no contiguous slice view. The other two have one maintainer each and a small user base. Write a private `struct Batch(Vec<T>)` with a `first()` that returns `&T` and a constructor that rejects empty input. Use `nunny` only when a non-empty slice type appears in three or more signatures.
+- Do not use `bounded-integer`, `konst`, `parse-display`, or `enum-iterator`. A hand-written `const fn new -> Option<Self>` covers the bound. Nothing parses strings at compile time. A regex-backed `FromStr` is the wrong shape for input parsing. `strum::VariantArray` already iterates variants.
+- Do not use `enumset`. It is a second flags crate from one maintainer. Use `bitflags`.
+- Do not use `tap` or `extend`. `.pipe` costs a prelude import per file, and `extend` hides the extension trait's name from grep. Use std `inspect` and `inspect_err`, and write a `<Type>Ext` trait by hand.
+- Do not use `validator`, `garde`, or `serde_valid`. Each gives a post-construction `.validate()` that a caller can skip and that serde never runs. Use `bon` `new` with typed fields. Use `#[serde(try_from = "RawConfig")]` for a check that spans fields.
+- Do not use `color-eyre`, `snafu`, `miette`, `displaydoc`, or `error_set`. Each is a second error convention. Use `thiserror` and `anyhow`.
+- Do not use `test-case`, `assert_matches`, `googletest`, `expect-test`, or `similar-asserts`. Each is a second test vocabulary. Use `rstest`, `pretty_assertions` (which has `assert_matches!`), and `insta`.
+- Do not use `divan`. It is a second benchmark harness. Use `criterion`.
+- Do not use `ordered-float` for a price or a quantity. Put money in a decimal type. Use `f64::total_cmp` to sort floats. Use `NotNan` only when an `f64` keys a `BTreeMap`.
+- Do not use `nutype` 0.7 on a wire type. It rejects every non-doc attribute on the struct, so `#[repr(transparent)]`, `#[derive(zerocopy::FromBytes)]`, and `#[serde(transparent)]` cannot combine with it. Write `const fn new -> Option<Self>` by hand. When 0.8 ships attribute passthrough, a config-boundary newtype (a port, a symbol, a bounded size) may take `#[nutype(validate(..))]`, whose `try_new` also runs inside `Deserialize`.
 
 Every version above was checked against crates.io on 2026-09-04.

@@ -1,6 +1,6 @@
 # Lints
 
-The mechanical layer of `idiomatic-rust`: the check command the agent runs on the crates a diff touches, the `#[expect]` policy, the rules the command retires from `SKILL.md`, and the same lint set as a workspace block for a repo that wants it in CI. Every lint name is verified against clippy 0.1.97 on Rust 1.97.1, the toolchain `zll_core` pins; the Calibration section at the end holds the evidence.
+The mechanical layer of `idiomatic-rust`: the check command the agent runs on the crates a diff touches, the `#[expect]` policy, the rules the command retires from `SKILL.md`, and the same lint set as a workspace block for a repo that wants it in CI. Every lint name is verified against clippy 0.1.97 on Rust 1.97.1. The Calibration section at the end holds the evidence.
 
 ## The check command
 
@@ -107,7 +107,7 @@ Each rule below is enforced by the command and never appears in `SKILL.md` prose
 
 ## Optional workspace block
 
-The same set as manifest lints, for a repo that wants the check in CI. An option the repo owner takes, never a step the skill takes; `zll_core` stays without it. With the block in the root `Cargo.toml`, each member crate opts in with `[lints] workspace = true`, and the check command shrinks to `cargo clippy --no-deps -p <crate> --all-features -- -D warnings`. Formatted with `taplo fmt` under the house config (aligned entries, reordered keys).
+The same set as manifest lints, for a repository that wants the check in CI. This block is an option the repository owner takes. It is never a step the skill takes. With the block in the root `Cargo.toml`, each member crate opts in with `[lints] workspace = true`, and the check command shrinks to `cargo clippy --no-deps -p <crate> --all-features -- -D warnings`. The block is formatted with `taplo fmt` (aligned entries, reordered keys).
 
 ```toml
 [workspace.lints.rust]
@@ -146,8 +146,8 @@ The test relaxation has no manifest form; a repo with the block adds `allow-unwr
 
 ## Calibration
 
-Run on 2026-09-04 against Rust 1.97.1 (clippy 0.1.97), the toolchain `zll_core` pins, with the repo read only. Every lint above resolves on that toolchain. Three deviations from the design were shipped as a result: `module_name_repetitions` left `-A` (it is `restriction` since 1.93, so relaxing it under pedantic is a no-op); `mem_forget` left the `-D` picks (every one of its findings in `zll_core` comes from the `wincode` derive expansion, none from hand-written code, and the lint does not skip external macros); `-A clippy::inline_always` was added (110 deliberate uses in `primitives`).
+The commands were run on 2026-09-04 against Rust 1.97.1 (clippy 0.1.97). Every lint above resolves on that toolchain. Three flags changed as a result. `module_name_repetitions` is not in the `-A` list, because it is a `restriction` lint since 1.93 and relaxing it under pedantic is a no-op. `mem_forget` is not in the `-D` picks, because in a workspace with zero-copy wire types every one of its findings came from a serialization derive expansion, none from hand-written code, and the lint does not skip external macros. `-A clippy::inline_always` was added, because a low-latency workspace had 110 deliberate uses in one crate.
 
-On a scratch crate the first command passes on an iterator-chain function, fails with `clippy::unwrap-used` on a `parse().unwrap()` in library code, and ignores test code entirely; the second command passes a test module holding an `unwrap()` and an `assert!` inside a `Result`-returning test. `panic_in_result_fn` fires on `assert!` and `panic!`, not on `debug_assert!` or `unreachable!`. A `clippy.toml` with `allow-unwrap-in-tests` clears the test `unwrap` but not `panic_in_result_fn`, so a config file cannot replace the second run.
+On a scratch crate, the first command passes an iterator-chain function, fails with `clippy::unwrap-used` on a `parse().unwrap()` in library code, and ignores test code. The second command passes a test module that holds an `unwrap()` and an `assert!` inside a `Result`-returning test. `panic_in_result_fn` fires on `assert!` and `panic!`, not on `debug_assert!` or `unreachable!`. A `clippy.toml` with `allow-unwrap-in-tests` clears the test `unwrap` but not `panic_in_result_fn`, so a config file cannot replace the second run.
 
-On `zll_core`, which never ran pedantic, the shipped set reports 254 findings in `primitives` (top: `doc_markdown` 51, `cast_lossless` 46, `missing_errors_doc` 35) and 407 in `matching_engine` (top: `missing_errors_doc` 65, `doc_markdown` 65, `expect_used` 53, `unwrap_used` 46), each crate in under ten seconds once dependencies are built. Without `--no-deps`, `-p primitives` failed on two findings in `types_derive` before reaching `primitives` at all. The two `matching_engine` binaries carry 82 `print_stdout` findings, the case the `-A` above is for. Those counts are why the check is diff-scoped: the filter under "When the crate has a backlog" printed 17 findings for `primitives/src/id.rs` alone.
+On a 40-crate workspace that never ran pedantic, the shipped set reported 254 findings in its primitives crate (top: `doc_markdown` 51, `cast_lossless` 46, `missing_errors_doc` 35) and 407 in its matching-engine crate (top: `missing_errors_doc` 65, `doc_markdown` 65, `expect_used` 53, `unwrap_used` 46). Each crate took under ten seconds once the dependencies were built. Without `--no-deps`, the run failed on two findings in a proc-macro crate in the build graph before it reached the named crate. The two binaries of the matching-engine crate carried 82 `print_stdout` findings, which is the case the `-A` above is for. Those counts are why the check is diff-scoped. The filter under "When the crate has a backlog" printed 17 findings for one changed file.

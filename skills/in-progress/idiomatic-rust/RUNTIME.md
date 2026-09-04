@@ -1,10 +1,10 @@
 # Runtime
 
-Async tasks, OS threads, and the boundary between them. The runtime branch of [idiomatic-rust](SKILL.md); same reading, *what it looks like* → *the move*.
+Rules for async tasks, OS threads, and the boundary between them. Follow them together with [SKILL.md](SKILL.md).
 
-- **Cancel first.** An `Arc<AtomicBool>` polled by an async loop; a `broadcast::channel::<()>` every task subscribes to; a task that ends only when its channel drops. → A `CancellationToken` passed to every long-lived task, `select!` with `cancel.cancelled()` as the first arm, `child_token()` per subsystem, `drop_guard()` where unwinding must cancel. An `AtomicBool` read by a sync OS thread stays correct; this rule is for tasks.
+- **Cancel first.** Pass a `CancellationToken` to every long-lived task. Put `cancel.cancelled()` as the first arm of every `select!`. Create a `child_token()` for each subsystem. Use `drop_guard()` where an unwinding task must cancel its children. Do not poll an `Arc<AtomicBool>` in an async loop. Do not signal shutdown with a `broadcast` channel of `()`. An `AtomicBool` that a sync OS thread reads is correct.
 
-- **The spawn shape.** `tokio::spawn` inline in a handler; a task whose exit conditions live in the reader's head. → `fn spawn_x(deps, cancel: CancellationToken, log: Logger) -> JoinHandle<()>` with the exit conditions in its doc comment. `select!` arms are one line, delegating anything longer to a named `async fn`. "Sleep unless cancelled" is the two-arm `select!` with an empty body.
+- **The spawn shape.** Write `fn spawn_x(deps, cancel: CancellationToken, log: Logger) -> JoinHandle<()>`. State the exit conditions in the doc comment. Keep each `select!` arm to one line. Move a longer arm body into a named `async fn`. Write "sleep unless cancelled" as a two-arm `select!` with an empty body.
 
   ```rust
   tokio::select! {
@@ -13,11 +13,11 @@ Async tasks, OS threads, and the boundary between them. The runtime branch of [i
   }
   ```
 
-- **Own the handles.** `Vec<JoinHandle<()>>` joined in a loop; a `JoinHandle` dropped on the floor. → `JoinSet` when results are read, `TaskTracker` when they are not; `tracker.close(); tracker.wait().await` at shutdown.
+- **Own every handle.** Store a `JoinHandle` or await it. Do not drop it. Use `JoinSet` when you read the results. Use `TaskTracker` when you do not. At shutdown, call `tracker.close()` and then `tracker.wait().await`.
 
-- **Channels by role.** One `mpsc` for everything; a lock shared between a handler and a worker. → `mpsc` for a work queue, `oneshot` for request/response correlation, `watch` for current state read before acting, `broadcast` for fan-out with `Lagged` handled explicitly.
+- **One channel per role.** Use `mpsc` for a work queue. Use `oneshot` for a request and its reply. Use `watch` for current state that a task reads before it acts. Use `broadcast` for fan-out, and handle `Lagged` explicitly.
 
-- **The sync/async boundary is a queue and a thread.** `block_on` inside async; a mutex shared by the async edge and the engine thread. → Async producers push into a lock-free queue (`ArrayQueue`, `rtrb`); one named, core-pinned `thread::Builder` thread drains it. The reply path is correlate-by-id into a `oneshot`. Every long-lived OS thread is named, so it shows up as itself in a profile.
+- **A queue and a thread at the boundary.** Push from async producers into a lock-free queue such as `ArrayQueue` or `rtrb`. Drain the queue on one OS thread. Create that thread with `thread::Builder::new().name(..)` and pin it to a core. Send a reply through a `oneshot` that you find by request id. Name every long-lived OS thread, so it appears under its own name in a profile. Do not call `block_on` inside async code. Do not share a mutex between the async edge and the engine thread.
 
   ```rust
   thread::Builder::new()
@@ -28,8 +28,8 @@ Async tasks, OS threads, and the boundary between them. The runtime branch of [i
       })?;
   ```
 
-- **Async stays out of traits.** `#[async_trait]`; `Box<dyn Future>` in a trait seam. → Free functions and inherent `async fn`; a trait seam over sync methods (`PollAcks`, `TryDequeue<T>`) with a no-op impl for tests; native `async fn` in a trait only where no trait object is needed.
+- **Async stays out of traits.** Write async code in free functions and inherent `async fn`. Define a trait seam over sync methods, such as `PollAcks` or `TryDequeue<T>`, with a no-op impl for tests. Do not use `#[async_trait]`. Use a native `async fn` in a trait only when you never need a trait object.
 
-- **Locks and `.await`.** A `std::sync` or `parking_lot` guard alive across an `.await`; `tokio::sync::Mutex` on a hot path. → Drop the guard before the await or move the work into a sync fn; `parking_lot` for short critical sections, aliased (`Mutex as SyncMutex`) whenever a tokio lock is in scope. Message passing first (Ownership).
+- **Locks and `.await`.** Do not hold a `std::sync` or `parking_lot` guard across an `.await`. Drop the guard before the await, or move the work into a sync fn. Use `parking_lot` for a short critical section. Alias it with `use parking_lot::Mutex as SyncMutex;` when a tokio lock is in scope. Do not use `tokio::sync::Mutex` on a hot path.
 
-- **Combinators worth naming.** A hand-written loop over a stream of futures; `futures::select!`; `.boxed()` per message. → `buffer_unordered(n)`, `ready_chunks(n)`, `try_next`, `take_until(cancel.cancelled())`, `FuturesUnordered`; `tokio::select!` and `tokio::join!`; `Framed` with a `Decoder` at the wire edge ([CRATES.md](CRATES.md)).
+- **Use the named combinators.** Use `buffer_unordered(n)`, `ready_chunks(n)`, `try_next`, `take_until(cancel.cancelled())`, and `FuturesUnordered`. Use `tokio::select!` and `tokio::join!`. Do not use `futures::select!`. Do not call `.boxed()` per message. Use `Framed` with a `Decoder` at the wire edge (see [CRATES.md](CRATES.md)).

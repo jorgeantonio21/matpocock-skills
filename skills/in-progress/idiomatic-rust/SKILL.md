@@ -1,17 +1,32 @@
 ---
 name: idiomatic-rust
-description: Concise, idiomatic, readable Rust, each rule with its rewrite. Use when writing new Rust, refactoring existing Rust, reviewing a diff that touches .rs or Cargo.toml files, or when another skill needs the Rust idiom baseline.
+description: Concise, idiomatic, readable Rust, each rule as an instruction with its reason. Use when writing new Rust, refactoring existing Rust, reviewing a diff that touches .rs or Cargo.toml files, or when another skill needs the Rust idiom baseline.
 ---
 
 # Idiomatic Rust
 
-The rules a linter cannot enforce, each reading *what it looks like* → *the move*. Building, read the section for the work in hand before writing: Shape decides the types and errors, Ownership the signatures, Flow the body, Surface the names and imports, Words the comments, docs, and tests. Reviewing, match every entry against the diff and cite it on each finding. A documented repo standard overrides any entry. Whatever the check command in [LINTS.md](LINTS.md) enforces is deliberately absent here.
+This file holds the Rust rules that a linter cannot enforce. Each rule is an instruction. A reason follows the instruction where the reason is not obvious. Follow every rule when you write or change Rust. When you review Rust, compare each changed function against every rule and name the rule on each finding. A documented standard in the repository overrides this file. The check command in [LINTS.md](LINTS.md) enforces the mechanical rules, so this file does not repeat them.
 
 ## Shape
 
-The types and the errors, decided first.
+Decide the types before you write a function body.
 
-- **Rejection is a value, failure is an `Err`.** One error enum mixing "the request was declined" with "the system is broken". → `Result<XOutcome, Error>` where `XOutcome::Rejected(Reason)` carries every expected no, and `Err` means an invariant is gone. A rejection is a response to the caller, never a `warn!`.
+- **The compiler is the guardrail.** Give each kind of value its own type: `Price`, `Quantity`, `AccountId`, `PortfolioId`. Do not use a bare `u64`, `f64`, `String`, or `bool` for a domain value. A function that takes two parameters of the same primitive type is a defect: the caller can swap the arguments and the compiler accepts the call. When two parameters have the same kind and different roles, put them in a struct with named fields. Put a unit in the type where a unit exists: `CentiCents(u64)`, `std::time::Duration`.
+
+  ```rust
+  pub struct Price(u64);
+  pub struct Quantity(u64);
+  pub struct Transfer { pub from: AccountId, pub to: AccountId, pub amount: Quantity }
+
+  fn fill(price: Price, quantity: Quantity) -> Fill { /* .. */ }
+  // fill(quantity, price) does not compile.
+  ```
+
+- **Make invalid states impossible.** Model "one of several" as an enum. Model "may be absent" as `Option`. Model "can fail" as `Result`. Do not pass a `bool` argument. Use a two-variant enum such as `Side::Buy` and `Side::Sell`. Do not use a sentinel value such as `-1` or an empty string. When a field is valid only while another field has a given value, merge both fields into one enum with data. Model a state machine as an enum, not as a set of flags. When a method is valid only in one phase of a value's life, put the phase in a type parameter: `Connection<Handshaking>` offers `complete()`, and `Connection<Ready>` offers `send()`. Use `NonZeroU64` for a count that is never zero.
+
+- **Parse at the boundary.** Convert raw input (bytes, JSON, a query string, a config file) into domain types at the edge of the system, once, in one place. Make the constructor of a validated newtype the only way to create a value, and keep the field private. Every value inside the core is then valid, and the core never checks it again. Do not pass a raw `u64` or `String` into the core.
+
+- **Rejection is an outcome. Failure is an error.** A domain method returns `Result<XOutcome, XError>`. `XOutcome` is an enum with a `Rejected(Reason)` variant for every expected "no": an unknown order, an insufficient balance, a closed market. `Err` means an invariant is broken or a dependency failed. Do not put an expected rejection in the error enum. Do not log a rejection with `warn!`. A rejection is a response to the caller.
 
   ```rust
   pub enum CancelOutcome { Cancelled { size: Quantity }, Rejected(RejectReason) }
@@ -22,9 +37,30 @@ The types and the errors, decided first.
       };
   ```
 
-- **The type carries the meaning.** A `bool` parameter, a sentinel (`-1`, an empty string), a field "only valid when" another is set, a `u64` that is really an id. → One-of is an enum, absent is `Option`, fallible is `Result`, a domain primitive is a newtype. `Widget::new(Size::Small, Shape::Round)`, never `Widget::new(true, false)`. A state machine is an enum with data, never a set of flags.
+- **Newtype anatomy.** Keep the inner field private. Write `const fn new`. When the value has a bound, return `Option<Self>` from `new` with `(v <= MAX).then_some(Self(v))`, and add a `const fn new_const` that panics, for literals. Implement `From` in both directions. Derive `Display` and `FromStr` so they delegate to the inner type (see [CRATES.md](CRATES.md)). Put sentinel values in associated consts: `AccountId::MAX`, `PriceOfAtom::ZERO`. Add `#[repr(transparent)]` when the layout matters, with a comment that says why. Write one `#[derive(...)]` line per ecosystem with a trailing comment that names the ecosystem. The comment shows a reader which surfaces the type crosses, and it stops rustfmt from merging the lines.
 
-- **Errors by layer.** `Box<dyn Error>`, `Result<T, String>`, or `anyhow` in a library signature; a `thiserror` enum in `main`; both conventions in one crate. → `thiserror` in libraries and deterministic cores, `anyhow` with `.context()` at the application and test edge. Variants carry structured fields (the path, the offset, the id), never a pre-formatted `String`, so the error is debuggable without the log line around it. A single-variant error is a `Copy` struct; enums absorb it with `#[error(transparent)]` and `#[from]`. `#[source]` when the message is re-worded, `#[from]` when the conversion is the whole story. Layer boundaries translate with an exhaustive `From`, so a new variant fails the build.
+  ```rust
+  /// A system-generated account identifier.
+  #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)] // std
+  #[derive(Serialize, Deserialize)] // serde
+  #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)] // zerocopy
+  #[repr(transparent)] // wire layout is the inner u64
+  pub struct AccountId(u64);
+  ```
+
+- **Derive, or explain.** Derive `Debug` on every type. Derive `Copy`, `Clone`, `PartialEq`, `Eq`, `Hash`, and `Default` where they are valid. Implement `From`. Do not implement `Into`. Put trait bounds on impl blocks, not on the type definition. Write an impl by hand only when the derive would be wrong, and put the reason in a comment above it: `// do NOT derive Hash: the default hashes byte by byte and is slow`.
+
+- **Private by default.** Keep fields private. Use `pub(crate)` for an item that other modules in the crate use. Use `pub` only for an item that other crates use. Give a type `new()` and derive `Default` when a no-argument value makes sense. Do not add a builder to a domain type. Add a builder only to a config struct with many optional fields, and use a compile-time checked builder (see [CRATES.md](CRATES.md)).
+
+- **Small traits.** Give a trait one capability, and build a ladder: `HasPosition`, then `HasOpenOrders: HasPosition`. A caller then asks for the weakest bound it needs. Name a bound bundle with a marker trait and a blanket impl: `pub trait BodyLayout: IntoBytes + KnownLayout + Copy {}` plus `impl<T: IntoBytes + KnownLayout + Copy> BodyLayout for T {}`. Add a method to a foreign type with an extension trait named `<Type>Ext`. Use generics. Use `dyn Trait` only for a heterogeneous collection. Implement `Deref` only on a smart pointer or an owning collection. Do not use `Deref` to reach the methods of a field. Write forwarding methods instead.
+
+## Errors
+
+Decide the error types with the domain types.
+
+- **Library errors use `thiserror`.** In a library crate, derive the error type with `#[derive(thiserror::Error, Debug)]`. Define one error enum per fallible operation or module, not one enum for the whole crate. A caller can then match on exactly the failures of the operation it called. Give each variant the data a caller needs to act on it: the id, the path, the offset, the expected and actual values. Do not format a message into a `String` field. Write the message with `#[error("...")]` and name the fields in it. Define a single-variant error as a struct, not as a one-variant enum. Derive `Copy` on an error that lives on a hot path, and keep `String` and `Box` out of it.
+
+- **Compose errors with `#[from]`, `#[source]`, and `transparent`.** Use `#[from]` on a variant when the inner error converts into this variant and nothing else. The `?` operator then converts it. One inner type can carry `#[from]` on only one variant of an enum. Use `#[source]` when the variant adds its own fields, or when the same inner type feeds two variants. `#[source]` keeps the cause chain and generates no `From`. Use `#[error(transparent)]` on a variant that only wraps another error. The wrapped message and cause chain then show through.
 
   ```rust
   #[derive(Debug, Error, Copy, Clone, PartialEq, Eq)]
@@ -40,36 +76,25 @@ The types and the errors, decided first.
   }
   ```
 
-- **Newtype anatomy.** `pub struct AccountId(pub u64)`; a type alias standing in for a type; `impl Display` written out by hand. → Private field, `const fn new` (fallible: `(v <= MAX).then_some(Self(v))`, plus a `const` panicking twin for literals), `From` both ways, `Display` and `FromStr` delegated to the inner type (derived, see [CRATES.md](CRATES.md)), sentinels as associated consts (`AccountId::MAX`), `#[repr(transparent)]` with a comment saying why the layout matters. Derives stacked one line per ecosystem with a trailing comment, so a reader sees which surfaces the type crosses; the comment is also what stops rustfmt merging the lines.
+- **Translate errors at a layer boundary.** Write an exhaustive `From<InnerError> for OuterError` impl at each boundary. Name every variant. Do not write a `_` arm. A new inner variant then fails the build until the translation handles it.
 
-  ```rust
-  /// A system-generated account identifier.
-  #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Debug)] // std
-  #[derive(Serialize, Deserialize)] // serde
-  #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)] // zerocopy
-  #[repr(transparent)] // wire layout is the inner u64
-  pub struct AccountId(u64);
-  ```
+- **Application errors use `anyhow`.** In a binary crate and in tests, return `anyhow::Result<T>`. Add context at each layer where the lower message is not enough on its own: `.context("load gateway config")?` or `.with_context(|| format!("read {path}"))?`. Do not return `anyhow::Error` from a library function. Do not use `Box<dyn Error>`, `String`, or `()` as an error type in any signature. Do not mix the two conventions in one crate's public interface.
 
-- **Derive eagerly, hand-write with a reason.** A public type without `Debug`; `impl Into<T>`; a hand-written `Default` a derive would produce. → `Debug` on every type; `Copy`, `Clone`, `Eq`, `Hash`, `Default` where valid; `From`, never `Into`. Trait bounds live on impl blocks, never on the type definition. A hand-written impl only where the derive would be wrong, with the reason in a comment above it (`// do NOT derive Hash: the default hashes byte by byte and is slow`).
-
-- **Private by default.** `pub` fields on a struct with an invariant; a `pub fn` nothing outside the crate calls; a builder on a domain type. → Fields private, `pub(crate)` across modules, `new()` beside `Default`. A builder only on a config-shaped struct with many optional inputs, and then a compile-time-checked one ([CRATES.md](CRATES.md)).
-
-- **Traits are small and layered.** A ten-method trait; `Box<dyn Trait>` where every caller knows the type; `Deref` to reach a field's methods. → One capability per trait (`HasPosition`, then `HasOpenOrders: HasPosition`); a marker trait with a blanket impl to name a bound bundle; an extension trait (`AccountExt`) to add a method to a foreign type. Generics until the collection is heterogeneous. `Deref` only on smart pointers and owning collections; forwarding methods everywhere else.
+- **Never swallow an error.** Propagate with `?` everywhere a caller can act on the error. Do not write `let _ = fallible();` without a comment that says why the result does not matter. Do not convert an error to a log line and continue, unless the operation is best-effort by design and a comment says so.
 
 ## Ownership
 
-Signatures and borrows.
+Decide the signatures.
 
-- **Take what you use.** `&String`, `&Vec<T>`, `&Box<T>`, `&PathBuf` in a signature; an owned `String` the body only reads; `&self` on a `Copy` newtype. → `&str`, `&[T]`, `&T`, `&Path`; owned only when the function stores or consumes it; `self` by value on `Copy` types; `impl IntoIterator<Item = T>` when the body only iterates.
+- **Take what you use.** Take `&str`, `&[T]`, `&Path`, and `&T`. Do not take `&String`, `&Vec<T>`, `&PathBuf`, or `&Box<T>`. Take an owned value only when the function stores it or consumes it. Take `self` by value in a method on a `Copy` newtype. Take `impl IntoIterator<Item = T>` when the function only iterates.
 
-- **A clone is for a second owner.** `.clone()` added to make a borrow error go away; a whole collection cloned to read it; `x.clone()` on an `Arc`. → Shrink the borrow's scope with an inner block, move the value out with `mem::take` or `Option::take`, split the struct so fields borrow independently, or borrow in the signature. `Arc::clone(&x)` spelled out where a count bump is the intent.
+- **Clone only for a second owner.** Do not add `.clone()` to make a borrow error go away. When the borrow checker rejects the code, do one of these: shrink the borrow with an inner block, move the value out with `mem::take` or `Option::take`, split the struct so the fields borrow independently, or borrow in the signature. Write `Arc::clone(&x)` when you increment a reference count. Do not write `x.clone()` on an `Arc`.
 
-- **Elide.** `'a` on a function with one reference input; `'static` or `Arc` reached for to escape a lifetime; a lifetime threaded through a public struct. → Name a lifetime only when the output borrows from one of several inputs or a struct stores a reference. Own at a public boundary (`Vec<u8>`, not `&'a [u8]`) and let the compiler elide the rest.
+- **Elide lifetimes.** Do not write a lifetime the compiler can infer. Name a lifetime only when the output borrows from one of several inputs, or when a struct stores a reference. Own data at a public boundary: use `Vec<u8>`, not `&'a [u8]`, in a public struct. Do not use `'static`, `Arc`, or `Rc` to escape a lifetime error.
 
-- **Share by message.** `Arc<Mutex<T>>` as the first answer to sharing; a guard held across `.await`; a `MutexGuard` returned from a method. → A channel by role ([RUNTIME.md](RUNTIME.md)). When a lock is unavoidable, its scope is a few lines and the guard never leaves them.
+- **Share by message.** Send data between tasks through a channel (see [RUNTIME.md](RUNTIME.md)). Do not reach for `Arc<Mutex<T>>` first. When a lock is necessary, hold it for a few lines. Do not hold it across `.await`. Do not return a guard from a method.
 
-- **Rebind, then move.** `let n2_cloned = n2.clone(); move || use(n2_cloned)`; a value prepared with `let mut` and mutable ever after. → Rebind inside a block around the closure so the body keeps the outer names; freeze prepared data with `let data = data;` or an inner block.
+- **Rebind, then move.** Rebind a captured variable in a block around a `move` closure, and keep the outer name inside the closure. Do not write `let n2_cloned = n2.clone()`. Freeze prepared data with a rebinding. After the rebinding, the compiler rejects a later mutation.
 
   ```rust
   let on_tick = {
@@ -81,11 +106,11 @@ Signatures and borrows.
 
 ## Flow
 
-Inside a function.
+Write the function body.
 
-- **Transform, don't match.** `match opt { Some(x) => x, None => return }`; `if x.is_some() { x.unwrap() }`; a `match` on a `Result` whose `Err` arm only returns. → `?`, `if let`, `while let`, `let...else`, `map`, `map_err`, `ok_or_else`, `and_then`, `is_some_and`, `then_some`, `matches!`. A `match` earns its place by binding in more than one arm. `let Ok(x) = fallible() else { return Ok(Outcome::Rejected(reason)) };` discards an error the domain has already answered.
+- **Transform, do not match.** Use `?`, `if let`, `while let`, `let ... else`, `map`, `map_err`, `ok_or_else`, `and_then`, `is_some_and`, `then_some`, and `matches!` on `Option` and `Result`. Write a `match` only when more than one arm binds a value. Write `let Some(x) = opt else { return ... };` for an early return. Write `let Ok(x) = res else { return Ok(Outcome::Rejected(reason)) };` when the domain has already answered the error.
 
-- **Guards first, happy path flat.** A pyramid of nested `if let`; a helper extracted only to get several early exits; a bare `return` with no reason. → Guard clauses at the top with the reason in a one-line comment, the happy path unindented. A value with several exits is a labeled block, the label named for the thing escaped.
+- **Guards first, happy path flat.** Put every guard clause at the top of the function, with the reason in a one-line comment above it. Keep the happy path at the lowest indentation. Build a value that has several exit points in a labeled block, and name the label for the thing you escape. Do not extract a helper function only to get early returns.
 
   ```rust
   let cancelled_on_book = 'book: {
@@ -95,48 +120,50 @@ Inside a function.
   };
   ```
 
-- **Exhaustive with `|`.** `_ =>` on a local enum; identical arms written twice. → Every variant named, arms with the same body grouped with `|`, so adding a variant fails the build. `unreachable!("reason")` and `debug_assert!(cond, "invariant")` carry the invariant in their message.
+- **Match exhaustively.** Name every variant of a local enum in a `match`. Do not write a `_` arm. A new variant then fails the build. Group arms with the same body with `|`. Write the invariant in the message of `unreachable!` and `debug_assert!`: `debug_assert!(!exposure.is_empty(), "sparse map holds no empty exposure")`.
 
-- **Chain to build, loop to consume.** `for i in 0..v.len()` with `v[i]`; `.filter().map()` that could fuse; `.collect()` mid-chain; `.for_each` with a block body; `fold` threading an accumulator tuple. → An iterator chain for a fresh collection; `for x in &v` when the body has side effects; `filter_map`, `find_map`; `collect::<Result<Vec<_>, E>>()?` for a fallible map; `sum`, `any`, `find` over `for_each`. std first; itertools for `tuple_windows`, `chunk_by`, `kmerge`, `exactly_one` ([CRATES.md](CRATES.md)).
+- **Chain to build, loop to consume.** Build a new collection with an iterator chain and `collect()`. Use `for x in &v` when the loop body has side effects. Use `filter_map` and `find_map` where one closure can filter and map. Collect a fallible map with `collect::<Result<Vec<_>, E>>()?`. Do not `unwrap` inside the closure. Use `sum`, `any`, and `find`. Do not use `for_each` with a block body. Do not write `for i in 0..v.len()` with `v[i]`. Use std methods first. Use itertools for `tuple_windows`, `chunk_by`, `kmerge`, and `exactly_one` (see [CRATES.md](CRATES.md)).
 
-- **A panic is a decision.** `.unwrap()` on I/O, parsing, or a map lookup; `let _ = fallible();`; `panic!` as error handling. → `?` everywhere a caller can act. `unwrap`, `expect`, and indexing live in tests, `main`, and provably infallible sites, with the invariant in the `expect` message or a comment within two lines. A discarded `Result` carries a comment saying why ignoring it is safe; an explicit `drop(guard)` says why it is early.
+- **A panic is a decision.** Use `?` everywhere a caller can act on the error. Use `unwrap`, `expect`, and indexing only in tests, in `main`, and at a site that cannot fail. At such a site, write the invariant in the `expect` message or in a comment within two lines. Do not use `panic!` to handle an error. When you call `drop(x)` before the end of the scope, write a comment that says why.
 
-- **Numbers have names.** `86_400`, `1 << 3`, `0.0001` inline in an argument or a comparison. → A `const` named for its meaning, or an associated const on the type that owns the noun (`PriceOfAtom::ONE_CENT`, `AccountId::MAX`). Only `0`, `1`, and `2` stay literal.
+- **Name every number.** Give a literal other than `0`, `1`, and `2` a name. Use a `const`, or an associated const on the type that owns the value: `PriceOfAtom::ONE_CENT`, `AccountId::MAX`.
 
-- **Arithmetic is checked.** `a + b` on values from the wire or from a client; `x / y` with `y` from input. → `checked_add`, `checked_mul`, `saturating_sub`, with the overflow mapped to an error or a rejection; plain operators only where a comment states the bound that makes them safe.
+- **Check arithmetic on external values.** Use `checked_add`, `checked_mul`, and `saturating_sub` on values that come from the wire or from a client. Map an overflow to an error or a rejection. Use a plain operator only when a comment states the bound that makes it safe.
 
 ## Surface
 
-Names, imports, and the public API.
+Name the items and shape the public interface.
 
-- **Imports at the top.** `use` inside a function; `crate::time::TimeStamp` spelled out at a call site or in a signature. → Every non-std path imported at the top of the file. On a collision, alias: `use parking_lot::Mutex as SyncMutex;`. Macro and attribute paths are the exception.
+- **Imports at the top.** Import every non-std path at the top of the file. Do not write `use` inside a function. Do not write a qualified path such as `crate::time::TimeStamp` at a call site or in a signature. When two names collide, alias one: `use parking_lot::Mutex as SyncMutex;`. Macro paths and attribute paths are the exception.
 
-- **Names by convention.** `get_first()`; `to_` on a cheap borrow; `UUID`; `data`, `utils`, `manager`; `SnapShot` beside `Snapshot`; `replace_balance(amount)`. → `as_` free and borrowed, `to_` expensive, `into_` consuming; getters without `get_`; `iter`, `iter_mut`, `into_iter`; acronyms as words (`Uuid`). Functions name the decision (`cancel_old_then_reject`, `drain_then_cancel`). Suffixes carry meaning: `Outcome`, `Kind`, `Reason`, `Config`, `Handle`, `Ext`, `Has*`, `*For<T>`. Generic letters are initials (`E` for exposure, `H` for header); labels name the thing escaped (`'book`, `'sweep`); closure parameters are the domain noun. Shadow through a transformation (`let order = parse(order)?`), never `raw_order` and `parsed_order`. One name per concept within a diff, matching the crate's existing name for it.
+- **Names follow the std conventions.** Name a conversion by cost and ownership: `as_` is free and borrowed, `to_` is expensive, `into_` consumes `self`. Name a getter after the field, without `get_`. Write an acronym as one word: `Uuid`. Name a function for the decision it makes: `cancel_old_then_reject`. Use the suffixes with these meanings: `Outcome` for a domain result, `Kind` for a closed discriminant, `Reason` for why a request was rejected, `Config` for a configuration struct, `Handle` for a cloneable owner of a worker, `Ext` for an extension trait, `Has*` for a capability trait, `*For<T>` for a relation trait. Name a generic parameter with the initial of its concept (`E` for exposure). Name a label for the thing it escapes (`'book`). Name a closure parameter with the domain noun. Shadow a variable through a transformation: `let order = parse(order)?;`. Do not write `raw_order` and `parsed_order`. Use one name for one concept in a diff, and use the name the crate already uses.
 
-- **`lib.rs` is a module list.** `pub use` re-exporting everything; a `prelude`; `use foo::*`; logic inside `mod.rs`. → A visibility-graded `pub mod` / `pub(crate) mod` list, alphabetised; `pub use` only rescues an item from a private module; `#[cfg(test)]` and feature gates on the `mod` line. Glob imports only as `use super::*` in tests.
+- **`lib.rs` is a module list.** Write `lib.rs` as an alphabetized list of `pub mod`, `pub(crate) mod`, and `mod` lines. Put `#[cfg(test)]` and feature gates on the `mod` line. Use `pub use` only to export an item from a private module. Do not write a `prelude` module. Do not write `use foo::*`. The exception is `use super::*` in a test module.
 
-- **Attributes say why.** A bare `#[must_use]`; `#[allow(dead_code)]` at crate scope; `#![deny(warnings)]`; `unsafe {}` with nothing above it. → `#[must_use = "None means the tree was full"]`; `#[expect(lint, reason = "...")]` on the one item; `-D warnings` in CI, never in source; `// SAFETY:` above every `unsafe` block, discharging the contract by name.
+- **Attributes say why.** Write `#[must_use = "reason"]`. Do not write a bare `#[must_use]`. Write `#[expect(lint, reason = "...")]` on the one item that needs it. Do not write `#[allow]` at crate scope. Do not write `#![deny(warnings)]` in source. Write `// SAFETY:` above every `unsafe` block, name the obligation, and say why it holds.
 
-- **Bundle the arguments.** `#[allow(clippy::too_many_arguments)]`; six positional parameters; a closure type explained with `/* name */` comments. → A request struct with named fields; a trait for the closure's shape. Five positional parameters is the ceiling.
+- **Bundle the arguments.** Keep a function at five positional parameters or fewer. Put more parameters in a request struct with named fields. Do not write `#[allow(clippy::too_many_arguments)]`. Give a complex closure type a trait. Do not describe its parameters with `/* name */` comments.
 
 ## Words
 
-Comments, docs, tests, logs.
+Write the comments, the docs, the tests, and the logs.
 
-- **Comments are one line and say why.** A paragraph restating what the code does; "We chose this approach because"; "Previously this used a HashMap"; a comment opening with "we" or "this function". → One line, the reason, present tense. The what is the code's job. A comment or `TODO` you did not write stays unless the code it explains is gone or its work is done.
+- **Write in Simplified Technical English.** Write comments, doc comments, error messages, and log messages in ASD-STE100 style. Write one instruction or one fact per sentence. Keep a sentence at 20 words or fewer. Use the active voice and the present tense. Use one word for one concept, and use the name the codebase uses for it: the type name, the function name, or the entry in the repository's glossary (`CONTEXT.md` or `GLOSSARY.md`) when one exists. Do not use a figure of speech, a synonym for variety, or a pronoun without a clear noun.
 
-- **Docs state the rule and the consequence.** `/// Returns the account id.`; parameter types restated; design reasoning that belongs in a PR. → A one-line summary, then the invariant and what breaks if it is violated: "Chosen once and fixed forever: changing it changes every derived id, breaking replay." `# Errors`, `# Panics`, `# Safety` where they apply; an intra-doc link for every item mentioned. A module doc carries the operating procedure: how to add a variant, when a number may change, what depends on it.
+- **Comments say why.** Write a comment only when the code cannot show the reason, and write the reason in one line. Do not restate what the code does. Do not describe a past implementation. Do not write "we" or "this function". Keep a comment or a `TODO` that you did not write. Remove it only when the code it explains is gone or its work is done.
 
-- **Tests read as sentences and show their arithmetic.** `test_partial_match`; a bare `assert_eq!(x, 1_010_000_000)`; a table looped inside one test; `now()` in a test. → In-file `mod tests`; names that state the behaviour (`micro_price_leans_toward_thinner_side`); the crate's `Result` alias as the return type so `?` works; the expected value derived in the comment above the assertion; `assert!(cond, "micro ({micro:?}) should exceed mid ({mid:?})")`; one-letter local constructors (`p(..)`, `q(..)`); a named constant for time; `prop_` for property tests; one named case per input ([CRATES.md](CRATES.md)). A new `pub fn` lands with a test in the same crate.
+- **Docs state the rule and the consequence.** Start a doc comment with a one-line summary. Then state the invariant and what breaks when the invariant is violated: "Chosen once and fixed forever. A change to this key changes every derived id and breaks replay." Do not restate the parameter types. Do not put design discussion in a doc comment. Add `# Errors`, `# Panics`, and `# Safety` sections where they apply. Link every item you mention with an intra-doc link: `` [`AccountId`] ``. Write a module doc (`//!`) as an operating procedure: say how to add a variant, when a number may change, and what depends on the module, in a numbered list. Write a variant doc that says when the variant occurs.
 
-- **Logs are structured.** `info!("processed {}", format!(..))`; `error!` on a declined request; `info!` per message. → Key-value arguments the macro formats lazily; a rejected request is a response, never a `warn!`; `info!` fires per cluster event, not per order.
+- **Tests read as sentences and show their arithmetic.** Put unit tests in a `#[cfg(test)] mod tests` block in the same file. Name a test for the behavior it checks: `micro_price_leans_toward_thinner_side`. Do not prefix it with `test_`. Return the crate's `Result` alias from the test so the body can use `?`. Derive the expected value in a comment above the assertion. Write `assert!(cond, "micro ({micro:?}) is above mid ({mid:?})")` with the values in the message. Define one-letter constructors for domain values in the test module: `p(..)` for a price, `q(..)` for a quantity. Use a named constant for time. Do not call `now()` in a test. Prefix a property test with `prop_`. Write one named case per input (see [CRATES.md](CRATES.md)). Add a test in the same crate for every new `pub fn`.
+
+- **Logs are structured.** Pass values as key-value arguments. Do not format the message before the macro call. Do not log a rejection with `warn!`. Emit `info!` per cluster event. Do not emit `info!` per order or per message.
 
 ## Check
 
-Before handing Rust back, run the check command from [LINTS.md](LINTS.md) on the crates the diff touches, then `cargo +nightly fmt` on them. Findings in the files the diff touches are yours: fix each one, or put `#[expect(lint, reason = "...")]` on the one item. A crate that never ran the check carries a backlog in its other files; report the count and leave it.
+Before you hand Rust back, run the check command from [LINTS.md](LINTS.md) on each crate the diff touches. Then run `cargo +nightly fmt` on those crates. Fix each finding in a file the diff touches, or put `#[expect(lint, reason = "...")]` on the one item. A crate that never ran the check has a backlog in its other files. Report the count of that backlog and leave it.
 
 ## Pointers
 
-- **Async, tasks, or threads in the diff** → read [RUNTIME.md](RUNTIME.md).
-- **About to hand-write an impl a crate would derive** → read [CRATES.md](CRATES.md).
-- **The check command and the lint policy** → read [LINTS.md](LINTS.md).
+- **The diff has async code, tasks, or threads.** Read [RUNTIME.md](RUNTIME.md).
+- **You are about to write an impl by hand that a crate would derive.** Read [CRATES.md](CRATES.md).
+- **You need the check command or the lint policy.** Read [LINTS.md](LINTS.md).
