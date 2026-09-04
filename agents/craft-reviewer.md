@@ -23,11 +23,11 @@ Done when you can say, for each changed file, what its siblings do that it shoul
 Match every changed hunk against, in order:
 
 1. The **house idiom** from step 1. A departure from it is a finding even where the departure would be fine in the abstract.
-2. The **language idiom**: what an experienced practitioner of this language writes here. For Rust, call the Skill tool with `idiomatic-rust` and cite its entry on each finding.
+2. The **language idiom**: what an experienced practitioner of this language writes here. For Rust, call the Skill tool with "idiomatic-rust" and cite its entry on each finding.
 3. The Pragmatic **Craft** and **Design** sections already in your context, tip by tip.
 4. The deep-module vocabulary from codebase-design, wherever the diff draws an interface: is the module deep, and is the seam in the right place?
 
-A documented repo standard overrides all four. Skip anything a formatter or linter enforces, and skip the bracketed Fowler overlaps: the Standards axis reports those.
+A documented repo standard overrides all four. Skip anything a formatter or linter enforces, and skip the bracketed Fowler overlaps: the Standards axis reports those. Where a Pragmatic tip and an idiomatic-rust entry flag the same hunk, report it once, in the Rust form: the language-specific rewrite is the more useful finding.
 
 Done when every changed hunk has been read against all four.
 

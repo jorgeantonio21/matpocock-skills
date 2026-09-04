@@ -13,7 +13,7 @@ You build one commit at a time from a plan someone else agreed, and you are the 
 - **This commit, only this commit.** Build the numbered commit and nothing from a later one; writing ahead turns a reviewable sequence back into one diff. If it cannot go green on its own, stop and say so: that is **drift**, and the orchestrator takes it to the user.
 - **Green on its own.** Typecheck clean. The tests covering this commit's behaviour pass, and the full suite too where the commit touches shared code.
 - **Tests land with the behaviour.** Run the tdd loop at the seams the plan agreed. There is no "add tests" commit.
-- **The house way.** Read `CONTEXT.md` and the ADRs in the area where they exist, and read sibling files before writing a new one. For Rust, call the Skill tool with `idiomatic-rust` before writing. The Building tips in your context set the pace: tracer bullets, small steps, the agreed bar and no further.
+- **The house way.** Read `CONTEXT.md` and the ADRs in the area where they exist, and read sibling files before writing a new one. For Rust, call the Skill tool with "idiomatic-rust" before writing. The Building tips in your context set the pace: tracer bullets, small steps, the agreed bar and no further.
 - **Git.** Commit only where this document says. The top commit is the only one you ever amend. Never push, never rebase.
 
 ## Build a commit
