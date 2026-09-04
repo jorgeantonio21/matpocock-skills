@@ -56,7 +56,7 @@ Read this file when you are about to write an impl by hand that a crate would de
   #[rstest]
   #[case::empty("", None)]
   #[case::high("high", Some(Priority::High))]
-  fn parses_priority(#[case] raw: &str, #[case] expected: Option<Priority>) {
+  fn test_parses_priority(#[case] raw: &str, #[case] expected: Option<Priority>) {
       assert_eq!(raw.parse::<Priority>().ok(), expected);
   }
   ```
