@@ -82,7 +82,7 @@ Decide the signatures.
 
 - **Elide lifetimes.** Do not write a lifetime the compiler can infer. Name a lifetime only when the output borrows from one of several inputs, or when a struct stores a reference. Own data at a public boundary: use `Vec<u8>`, not `&'a [u8]`, in a public struct. Do not use `'static`, `Arc`, or `Rc` to escape a lifetime error.
 
-- **Share by message.** Send data between tasks through a channel (see [RUNTIME.md](RUNTIME.md)). Do not reach for `Arc<Mutex<T>>` first. When a lock is necessary, hold it for a few lines. Do not return a guard from a method.
+- **Share by message.** Send data between tasks through a channel, or share it through an atomic or a lock-free structure (see [RUNTIME.md](RUNTIME.md)). Do not reach for `Arc<Mutex<T>>` first. When a lock is necessary, hold it for a few lines. Do not return a guard from a method.
 
 - **Time and randomness are inputs.** A state transition takes `now: Timestamp` as a parameter, and an `&mut impl Rng` when it needs randomness. Do not call `Instant::now()`, `SystemTime::now()`, or `thread_rng()` inside a state transition. The same inputs then replay the same state, and a test passes a constant. Read the clock and seed the generator at the edge, once per event. Use `Instant` for a duration. Use `SystemTime` only where a wall-clock time is recorded.
 
