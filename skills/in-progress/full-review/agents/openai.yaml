@@ -1,0 +1,3 @@
+interface:
+  display_name: "Full Review"
+  short_description: "Four-axis review: standards, spec, proven bugs, craft"
