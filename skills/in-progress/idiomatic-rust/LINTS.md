@@ -73,6 +73,7 @@ Each rule below is enforced by the command. A row marked *reinforced* also keeps
 | Shape | Box the outsized enum variant; alias a nested generic | `large_enum_variant`, `type_complexity` | default |
 | Shape | `T::default()` when the type is known | `default_trait_access` | pedantic |
 | Shape | `as_`, `to_`, `into_` receivers by convention | `wrong_self_convention` | default |
+| Surface | An acronym as one word: `Uuid`, not `UUID` | `upper_case_acronyms` | default |
 | Shape | One hundred or fewer lines | `too_many_lines` | pedantic |
 | Shape | `Result` or `Option` only where a function can fail or be absent | `unnecessary_wraps` | pedantic |
 | Ownership | `&str`, `&[T]`, `&T` parameters; owned only when consumed (reinforced) | `ptr_arg`, `borrowed_box`, `needless_pass_by_value` | default, pedantic |
