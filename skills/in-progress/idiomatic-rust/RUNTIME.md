@@ -2,7 +2,7 @@
 
 Rules for async tasks, OS threads, and the boundary between them. Follow them together with [SKILL.md](SKILL.md).
 
-- **Two regimes.** The **edge** is the async side: tokio tasks that do I/O and handle thousands of events per second. The edge can afford a short lock or one allocation per event. The **hot path** is a loop that handles a message in microseconds: a pinned worker thread, a ring-buffer consumer, a decoder. On the hot path, a lock, a heap allocation, or a syscall per message is a defect. Every rule below applies to the edge unless it says hot path. Measure before you move a rule across that line.
+- **Two regimes.** The **edge** is the async side: tokio tasks that do I/O and handle thousands of events per second. The edge can afford a short lock or one allocation per event. The **hot path** is a loop that handles a message in microseconds: a pinned worker thread, a ring-buffer consumer, a decoder. On the hot path, a lock, a heap allocation, or a syscall per message is a defect. Every rule below applies to the edge unless it says hot path. A web service, a CLI tool, or a batch job has no hot path, so only the edge rules apply there. Measure before you move a rule across that line.
 
 - **Cancel first, at the edge.** Pass a `CancellationToken` to every long-lived task. Put `cancel.cancelled()` as the first arm of every `select!`, and write `biased;` as the first line of the `select!`. With `biased;`, tokio polls the arms in the written order and skips the random branch shuffle, so the cancel arm is checked first. Create one token per subsystem at setup with `child_token()`. Do not signal shutdown with a `broadcast` channel of `()`.
 
@@ -49,7 +49,9 @@ Rules for async tasks, OS threads, and the boundary between them. Follow them to
       })?;
   ```
 
-- **Async stays out of traits.** Write async code in free functions and inherent `async fn`. Define a trait seam over sync methods, such as `PollEvents` or `TryDequeue<T>`, with a no-op impl for tests. Do not use `#[async_trait]`. Use a native `async fn` in a trait only when you never need a trait object.
+- **Async in a trait is a dispatch decision.** In an engine, define the seam over sync methods, such as `PollEvents` or `TryDequeue<T>`, with a no-op impl for tests. Keep the engine's async code in free functions and inherent `async fn`. In a service with a pluggable backend, such as a store or a transport behind a `Box<dyn Trait>`, an async trait is the right boundary. Write a native `async fn` in the trait. Add `#[trait_variant::make(Send)]` when a spawn needs the future to be `Send`. Add `#[dynosaur::dynosaur(DynStore = dyn(box) Store)]` when a caller needs a trait object (see [CRATES.md](CRATES.md)). Use `#[async_trait]` only in a crate that already uses it.
+
+- **`Send` at the spawn boundary.** `tokio::spawn` needs a `Send + 'static` future. `Rc`, `RefCell`, `Cell`, a raw pointer, a `MutexGuard` held across an `.await`, and `dyn Trait` without `+ Send` make a future `!Send`. Fix the type, not the spawn. Use `Arc` for `Rc`, and an atomic or a `parking_lot::Mutex` for `RefCell`. Write `dyn Trait + Send + Sync` in a shared box. Drop the guard before the `.await`. Use `spawn_local` on a `LocalSet` only for a value that must stay on one thread. Pin a type's `Send` with `const _: fn() = || { fn assert_send<T: Send>() {} assert_send::<Worker>() };`, so a regression fails the build. Do not write `unsafe impl Send`.
 
 - **Locks and `.await`.** When a lock survives "Share without a lock", do not hold its guard across an `.await`. Drop the guard before the await, or move the work into a sync fn. Use `parking_lot` for a short critical section at the edge. Alias it with `use parking_lot::Mutex as SyncMutex;` when a tokio lock is in scope. Do not use `tokio::sync::Mutex`, `Notify`, or any lock on the hot path.
 

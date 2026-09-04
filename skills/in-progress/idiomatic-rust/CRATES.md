@@ -1,6 +1,6 @@
 # Crates
 
-Read this file when you are about to write an impl by hand that a crate would derive. The list is short on purpose. None of these crates is required. Use one only when it removes hand-written code in the change you are making, and only when the crate is already a dependency or the pull request can justify it. Do not add a crate for a single use. Write the code instead. A new dependency is a per-PR decision. This file does not instruct a migration.
+Read this file when you are about to write an impl by hand that a crate would derive. The list is short on purpose. None of these crates is required. Use one only when it removes hand-written code in the change you are making. Use it only when the crate is already a dependency, or when the pull request can justify it. Do not add a crate for a single use. Write the code instead. A new dependency is a per-PR decision. This file does not instruct a migration.
 
 ## The set
 
@@ -38,7 +38,17 @@ Read this file when you are about to write an impl by hand that a crate would de
   tracker.wait().await;
   ```
 
-- **`bon` 3.10.** Use it only when a config struct has many optional fields and needs a builder. Put `#[bon::bon]` on the impl block and `#[builder]` on `new`. A missing required member is then a compile error, and a fallible `new` becomes a fallible `build()`, so validation lives in `new` and the fields stay private. Compile time grows with the member count, so use it for config-sized structs only. The runtime cost is zero.
+- **`trait-variant` 0.1 and `dynosaur` 0.3.** Use `#[trait_variant::make(Send)]` on a trait with a native `async fn` when a spawn needs the returned future to be `Send`. Use `#[dynosaur::dynosaur(DynStore = dyn(box) Store)]` on the trait when a caller needs a trait object such as `Box<DynStore<'_>>`. Static dispatch stays free; the `dyn(box)` form boxes only the future behind the trait object, where `#[async_trait]` boxes every call. See [RUNTIME.md](RUNTIME.md) for when a trait needs async at all.
+
+  ```rust
+  #[trait_variant::make(Send)]
+  #[dynosaur::dynosaur(DynStore = dyn(box) Store)]
+  pub trait Store {
+      async fn put(&self, key: Key, value: Vec<u8>) -> Result<(), StoreError>;
+  }
+  ```
+
+- **`bon` 3.10.** Use it only when a config struct has many optional fields and needs a builder. Put `#[bon::bon]` on the impl block and `#[builder]` on `new`. A missing required member is then a compile error. A fallible `new` becomes a fallible `build()`, so validation lives in `new` and the fields stay private. Compile time grows with the member count, so use it for config-sized structs only. The runtime cost is zero.
 
   ```rust
   #[bon::bon]
@@ -72,7 +82,7 @@ Use `derive_more::Display` for a type with a format string. Use `strum::Display`
 - `validator`, `garde`: a post-construction `.validate()` that a caller can skip and that serde never runs. Put the check in the type's constructor.
 - `derive_builder`, `typed-builder`: a missing field surfaces at runtime or as a deprecation warning. Use `bon` when a builder is warranted at all.
 - `eyre`, `color-eyre`, `snafu`, `miette`, `displaydoc`: a second error convention. Use `thiserror` and `anyhow`.
-- `async-trait`: native `async fn` in traits is stable. See [RUNTIME.md](RUNTIME.md) for when a trait needs async at all.
+- `async-trait`: native `async fn` in a trait is stable, `trait-variant` adds the `Send` bound, and `dynosaur` gives the trait object, all without the allocation per call.
 - `lazy_static`, `once_cell`: use `std::sync::LazyLock` and `std::sync::OnceLock`.
 - `static_assertions`: write `const _: () = assert!(..);`.
 - A crate for a single use, or a crate whose proc macro would land on a hot path without a measured reason.
