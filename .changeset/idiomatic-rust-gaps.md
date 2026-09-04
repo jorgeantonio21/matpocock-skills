@@ -1,0 +1,5 @@
+---
+"mattpocock-skills": patch
+---
+
+`idiomatic-rust`: close the gaps from the quality evaluation (fork issue #6, items 1 to 4 and 6). The preamble states the scope (a library, a service, or an engine) and each house rule now says where it does not apply: rejection-as-outcome, `Copy` errors, wire types, `new_const`, the `test_` prefix, and the hot-path regime. `RUNTIME.md` decides async in a trait by dispatch (a sync seam in an engine, a native `async fn` trait behind `trait-variant` and `dynosaur` in a service with a pluggable backend) and adds a `Send`-at-the-spawn-boundary entry. New idioms: let chains (edition 2024), `impl Iterator` and `Cow<'_, str>` in return position ("Return by need"), and `#[non_exhaustive]`. Four inconsistencies fixed: `Default` off the `JobId` derive stack, tests return `anyhow::Result<()>` everywhere, the sentence cap follows ASD-STE100 (20 for an instruction, 25 for a description), and `-A unreachable_pub` for a binary crate. `expect_used` leaves the check command and the workspace block, because `expect` with the invariant as its message is the form the skill asks for; `unwrap_used` stays.
