@@ -1,0 +1,5 @@
+interface:
+  display_name: "Pair by Plan"
+  short_description: "Agree the plan, then implementer builds and reviewer gates unattended"
+policy:
+  allow_implicit_invocation: false
