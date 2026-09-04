@@ -22,7 +22,14 @@ Decide the types before you write a function body.
   // fill(quantity, price) does not compile.
   ```
 
-- **Make invalid states impossible.** Model "one of several" as an enum. Model "may be absent" as `Option`. Model "can fail" as `Result`. Do not pass a `bool` argument. Use a two-variant enum such as `Side::Buy` and `Side::Sell`. Do not use a sentinel value such as `-1` or an empty string. When a field is valid only while another field has a given value, merge both fields into one enum with data. Model a state machine as an enum, not as a set of flags. When a method is valid only in one phase of a value's life, put the phase in a type parameter: `Connection<Handshaking>` offers `complete()`, and `Connection<Ready>` offers `send()`. Use `NonZeroU64` for a count that is never zero.
+- **Name the absence.** Use `Option<T>` only when `None` means nothing more than "not there": a map lookup, the first element of a slice, an optional config field. When the absence has a domain meaning, define an enum that names it: `Uninitialized` or `Initialized(T)`, `Fresh(Price)` or `Stale`, `Unpinned` or `Pinned(Index)`. A reader then sees why the value can be missing, and a `match` names every case. Do not use `Option<T>` where a comment would be needed to say what `None` means. Convert from `Option` with a `From<Option<T>>` impl at the boundary where a database or a wire format only knows null.
+
+  ```rust
+  pub enum MarkPrice { Fresh(Price), Stale { last: Price, age: Duration }, Unknown }
+  // Option<Price> would hide three different situations behind one None.
+  ```
+
+- **Make invalid states impossible.** Model "one of several" as an enum. Model "can fail" as `Result`. Do not pass a `bool` argument. Use a two-variant enum such as `Side::Buy` and `Side::Sell`. Do not use a sentinel value such as `-1` or an empty string. When a field is valid only while another field has a given value, merge both fields into one enum with data. Model a state machine as an enum, not as a set of flags. When a method is valid only in one phase of a value's life, put the phase in a type parameter: `Connection<Handshaking>` offers `complete()`, and `Connection<Ready>` offers `send()`. Use `NonZeroU64` for a count that is never zero.
 
 - **Parse at the boundary.** Convert raw input (bytes, JSON, a query string, a config file) into domain types at the edge of the system, once, in one place. Make the constructor of a validated newtype the only way to create a value, and keep the field private. Every value inside the core is then valid, and the core never checks it again. Do not pass a raw `u64` or `String` into the core.
 
