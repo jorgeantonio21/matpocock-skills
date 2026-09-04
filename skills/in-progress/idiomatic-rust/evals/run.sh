@@ -4,24 +4,46 @@
 # usage: run.sh <scenario> <bare|skill> [model]
 #
 # The scenario's start/ crate is copied to a throwaway directory under
-# /tmp, the agent runs there with every permission granted, and the final
-# tree (minus target/) plus the transcript land under results/.
+# EVAL_WORK_ROOT (default /tmp/idiomatic-rust-eval), the agent runs there with
+# every permission granted, and the final tree (minus target/) plus the
+# transcript land under results/. EVAL_LIMIT_SECONDS (default 2400) kills a
+# run that overstays.
 set -euo pipefail
 
+usage() {
+  echo "usage: run.sh <scenario> <bare|skill> [model]" >&2
+  exit 2
+}
+
+(($# == 2 || $# == 3)) || usage
 scenario=$1
 arm=$2
 model=${3:-}
 
 here=$(cd "$(dirname "$0")" && pwd)
 skill_dir=$(cd "$here/.." && pwd)
+start="$here/scenarios/$scenario/start"
+
+case $arm in
+bare | skill) ;;
+*)
+  echo "run.sh: the arm is 'bare' or 'skill', not '$arm'" >&2
+  usage
+  ;;
+esac
+if [[ ! -d $start ]]; then
+  echo "run.sh: no start/ crate for scenario '$scenario' under $here/scenarios" >&2
+  usage
+fi
+
 work_root=${EVAL_WORK_ROOT:-/tmp/idiomatic-rust-eval}
-# A fresh work dir per run; the old ones are throwaway and stay in /tmp.
+# A fresh work dir per run; the old ones are throwaway and stay where they are.
 work="$work_root/$scenario/$arm-$(date +%Y%m%d-%H%M%S)"
 out="$here/results/$scenario/$arm"
 limit_seconds=${EVAL_LIMIT_SECONDS:-2400}
 
 mkdir -p "$work" "$out"
-rsync -aL --exclude target "$here/scenarios/$scenario/start/" "$work/"
+rsync -aL --exclude target "$start/" "$work/"
 
 prompt=$(<"$here/scenarios/$scenario/prompt.md")
 args=(-p --safe-mode --dangerously-skip-permissions --output-format stream-json --verbose)
@@ -50,41 +72,5 @@ finished=$(date +%s)
 
 rsync -a --delete --exclude target --exclude .claude "$work/" "$out/tree/"
 
-python3 - "$out" "$status" "$started" "$finished" "$arm" "$scenario" "${model:-default}" <<'PY'
-import json, sys
-out, status, started, finished, arm, scenario, model = sys.argv[1:]
-result = {}
-tool_calls = []
-last_text = ""
-for line in open(f"{out}/transcript.jsonl", encoding="utf-8"):
-    try:
-        event = json.loads(line)
-    except json.JSONDecodeError:
-        continue
-    if event.get("type") == "result":
-        result = event
-    if event.get("type") == "assistant":
-        for block in event.get("message", {}).get("content", []):
-            if block.get("type") == "tool_use":
-                name = block.get("name")
-                inp = block.get("input", {})
-                brief = inp.get("command") or inp.get("file_path") or inp.get("pattern") or ""
-                tool_calls.append(f"{name}: {str(brief)[:120]}")
-            if block.get("type") == "text" and block.get("text", "").strip():
-                last_text = block["text"]
-open(f"{out}/final-message.md", "w").write(last_text)
-meta = {
-    "scenario": scenario,
-    "arm": arm,
-    "model": model,
-    "exit_status": int(status),
-    "wall_seconds": int(finished) - int(started),
-    "num_turns": result.get("num_turns"),
-    "total_cost_usd": result.get("total_cost_usd"),
-    "model_usage": list(result.get("modelUsage", {}).keys()),
-    "tool_calls": tool_calls,
-}
-json.dump(meta, open(f"{out}/meta.json", "w"), indent=2)
-print(json.dumps({k: v for k, v in meta.items() if k != "tool_calls"}))
-print(f"tool calls: {len(tool_calls)}")
-PY
+python3 "$here/analyze.py" meta "$out" "$status" "$started" "$finished" \
+  "$arm" "$scenario" "${model:-default}"

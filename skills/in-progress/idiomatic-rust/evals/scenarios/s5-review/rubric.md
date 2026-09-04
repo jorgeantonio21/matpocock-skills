@@ -1,6 +1,6 @@
 # s5-review rubric
 
-The crate under review is `s2-refactor`'s start crate, so the answer key is `../s2-refactor/answer-key.md`. The agent's findings list is the last assistant message in `results/s5-review/<arm>/transcript.jsonl`; `run.sh` also writes it to `review.md`.
+The crate under review is `s2-refactor`'s start crate, so the answer key is `../s2-refactor/answer-key.md`. The agent's findings list is the last assistant message in `results/s5-review/<arm>/transcript.jsonl`; `run.sh` also writes it to `final-message.md`.
 
 For each of the thirteen planted patterns, mark whether each arm found it. Then note:
 
