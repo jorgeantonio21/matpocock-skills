@@ -6,20 +6,22 @@ Read this file when you are about to write an impl by hand that a crate would de
 
 - **`thiserror` 2 and `anyhow` 1.** Use `thiserror` for an error type in a library. Use `anyhow` in a binary and in tests. The rules are in the Errors section of [SKILL.md](SKILL.md). The `thiserror` expansion is the hand-written `Display`, `source`, and `From`, so it is hot-path safe.
 
-- **`derive_more` 2.1.** Use `#[derive(Display, From, Into, FromStr)]` on a newtype instead of four delegating impls. Enable one cargo feature per derive. Derive `From` inbound only when every inner value is valid. Otherwise derive `Into` outbound and write a `const fn new`. Do not derive `Deref` on a newtype. The expansion is the hand-written code, so it is hot-path safe.
+- **`derive_more` 2.1.** Use `#[derive(Display, From, Into, FromStr)]` on a newtype instead of four delegating impls. Enable one cargo feature per derive. Derive `From` inbound only when every inner value is valid. Otherwise write a `const fn new` and derive only `Into`. The `Into` derive expands to `impl From<JobId> for u64`, which is the outbound `From` the Shape section asks for; no `Into` impl is written. Do not derive `Deref` on a newtype. The expansion is the hand-written code, so it is hot-path safe.
 
   ```rust
-  #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Display, From, Into)]
-  pub struct OrderId(u64);
+  #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)] // std
+  #[derive(Display, From, Into)] // derive_more
+  pub struct JobId(u64);
   ```
 
 - **`strum` 0.28.** Use `#[derive(VariantArray, EnumCount, EnumString, Display)]` on a unit enum instead of a hand-written `ALL` array, a `COUNT` const, or a match-table `FromStr`. Use `VariantArray`, which is a `'static` slice. Do not use `EnumIter`, which allocates an iterator struct. `ParseError` carries no payload, so it is hot-path safe.
 
   ```rust
-  #[derive(Clone, Copy, Debug, PartialEq, Eq, VariantArray, EnumCount, EnumString, Display)]
+  #[derive(Clone, Copy, Debug, PartialEq, Eq)] // std
+  #[derive(VariantArray, EnumCount, EnumString, Display)] // strum
   #[strum(serialize_all = "lowercase")]
-  pub enum Side { Buy, Sell }
-  // Side::VARIANTS, Side::COUNT, "buy".parse::<Side>()
+  pub enum Priority { Low, Normal, High }
+  // Priority::VARIANTS, Priority::COUNT, "high".parse::<Priority>()
   ```
 
 - **`itertools` 0.15.** Use `tuple_windows` for adjacent pairs, `chunk_by` for runs in sorted input, `kmerge` for a k-way merge, and `exactly_one` for an expected single result. Use a std method first where one exists: `slice::chunk_by`, `Iterator::is_sorted`, `inspect`. Write a typed `collect()`. Do not use `collect_vec()`. The named adaptors are zero-cost. `sorted_*`, `unique`, `counts`, and `into_group_map` allocate, so use them in tests and cold paths only.
@@ -29,7 +31,7 @@ Read this file when you are about to write an impl by hand that a crate would de
   ```rust
   let token = CancellationToken::new();
   let tracker = TaskTracker::new();
-  for gw in gateways { tracker.spawn(run(gw, token.child_token())); }
+  for worker in workers { tracker.spawn(run(worker, token.child_token())); }
   signal::ctrl_c().await?;
   token.cancel();
   tracker.close();
@@ -40,7 +42,7 @@ Read this file when you are about to write an impl by hand that a crate would de
 
   ```rust
   #[bon::bon]
-  impl Gateway {
+  impl Server {
       #[builder]
       pub fn new(port: Port, #[builder(default = Duration::from_secs(5))] timeout: Duration) -> Self {
           Self { port, timeout }
@@ -48,14 +50,14 @@ Read this file when you are about to write an impl by hand that a crate would de
   }
   ```
 
-- **`rstest` 0.26.** Use `#[rstest]` with one `#[case::name(..)]` per input row instead of a table looped inside one `#[test]`. Each case is then its own named test. Use `#[fixture] fn engine() -> Engine`, which rstest resolves by argument name, instead of a `fn setup()` called at the top of every test. Dev-dependency.
+- **`rstest` 0.26.** Use `#[rstest]` with one `#[case::name(..)]` per input row instead of a table looped inside one `#[test]`. Each case is then its own named test. Use `#[fixture] fn scheduler() -> Scheduler`, which rstest resolves by argument name, instead of a `fn setup()` called at the top of every test. Dev-dependency.
 
   ```rust
   #[rstest]
-  #[case::zero(0, false)]
-  #[case::one(1, true)]
-  fn rejects_bad_prices(engine: Engine, #[case] raw: u64, #[case] ok: bool) {
-      assert_eq!(engine.accept(Price::new(raw)).is_ok(), ok);
+  #[case::empty("", None)]
+  #[case::high("high", Some(Priority::High))]
+  fn parses_priority(#[case] raw: &str, #[case] expected: Option<Priority>) {
+      assert_eq!(raw.parse::<Priority>().ok(), expected);
   }
   ```
 
