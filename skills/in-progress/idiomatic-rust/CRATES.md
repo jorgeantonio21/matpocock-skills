@@ -24,7 +24,7 @@ Read this file when you are about to write an impl by hand that a crate would de
 
 - **`itertools` 0.15.** Use `tuple_windows` for adjacent pairs, `chunk_by` for runs in sorted input, `kmerge` for a k-way merge, and `exactly_one` for an expected single result. Use a std method first where one exists: `slice::chunk_by`, `Iterator::is_sorted`, `inspect`. Write a typed `collect()`. Do not use `collect_vec()`. The named adaptors are zero-cost. `sorted_*`, `unique`, `counts`, and `into_group_map` allocate, so use them in tests and cold paths only.
 
-- **`tokio-util` 0.7.** Use `CancellationToken` for shutdown and `TaskTracker` for a set of workers, as [RUNTIME.md](RUNTIME.md) describes. Use `codec::Framed` with a `Decoder` for length-prefixed framing at a wire edge. No proc macro.
+- **`tokio-util` 0.7.** Use `CancellationToken` for shutdown and `TaskTracker` for a set of workers at the async edge, as [RUNTIME.md](RUNTIME.md) describes. The token takes a mutex on every check, so bridge it to an atomic for a hot loop. Use `codec::Framed` with a `Decoder` for length-prefixed framing at a wire edge. No proc macro.
 
   ```rust
   let token = CancellationToken::new();
