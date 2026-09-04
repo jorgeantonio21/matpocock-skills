@@ -14,6 +14,8 @@ Rules for async tasks, OS threads, and the boundary between them. Follow them to
   }
   ```
 
+- **Only cancel-safe futures in `select!`.** When one arm completes, `select!` drops the futures of the other arms. A future that has consumed input and not yet returned it loses that input. `recv`, `sleep`, `cancelled`, and `changed` are cancel safe. `read_exact`, `write_all`, and `send` on a bounded channel are not. Run those to completion outside the `select!`, or create the future once, pin it, and poll `&mut fut` across iterations.
+
 - **Cancellation on the hot path.** `CancellationToken::is_cancelled()` takes a mutex on every call, and `cancelled()` takes it on every poll. `clone()`, `child_token()`, and drop take the mutex too and can restructure the token tree. Under contention with `cancel()`, these calls can stall for milliseconds. So: do not create, clone, or drop a token per request. Do not poll `cancelled()` per message in a fast loop. Bridge the token to an atomic once, in one watcher task, and read the atomic in the loop. The flag carries no data, so `Relaxed` ordering is enough. A sync OS thread reads the same atomic. Check the flag once per batch, not once per message.
 
   ```rust
@@ -25,6 +27,8 @@ Rules for async tasks, OS threads, and the boundary between them. Follow them to
   // In the hot loop, once per drained batch:
   if stop.load(Ordering::Relaxed) { break; }
   ```
+
+- **Atomic orderings.** Use `Relaxed` for a flag or a counter that carries no other data. Use `Release` on the store and `Acquire` on the load when the atomic publishes data that was written before the store. Use `SeqCst` only with a comment that names the ordering between two atomics that the code needs. Do not write `SeqCst` by default.
 
 - **The spawn shape.** Write `fn spawn_x(deps, cancel: CancellationToken, log: Logger) -> JoinHandle<()>`. State the exit conditions in the doc comment. Keep each `select!` arm to one line. Move a longer arm body into a named `async fn`.
 

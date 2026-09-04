@@ -137,12 +137,9 @@ The test relaxation has no manifest form; a repo with the block adds `allow-unwr
 
 ## Tools
 
-- `cargo-nextest`: one process per test, so a hanging or leaking test is isolated and named; retries and filtersets.
-- `cargo-machete`: unused-dependency detection on stable, for CI.
-- `cargo-hack`: `--each-feature` builds the feature combinations a crate that declares features otherwise never compiles.
-- `cargo-expand`: the review step for any new derive; expand it once and read the output for allocation or dynamic dispatch.
-- `bacon`: background `clippy` and `nextest` on save, so the check runs while editing rather than at hand-back.
-- `typos-cli`: source spell checker with a `_typos.toml` for domain words, before an identifier typo becomes public API.
+- `cargo-nextest`: runs one process per test, so a hanging or leaking test is isolated and named.
+- `cargo-machete`: finds unused dependencies on stable. Run it in CI.
+- `cargo-expand`: shows what a derive emits. Expand every new derive once and read the output for an allocation or dynamic dispatch.
 
 ## Calibration
 
