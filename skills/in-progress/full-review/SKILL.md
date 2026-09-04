@@ -45,6 +45,8 @@ Dispatch all of these at once, then wait for all of them:
 
 The two agent briefs are **context pointers**, nothing pasted: the diff command, the commit list, the fixed point, the spec path, the scope, the test commands, and the previous review files where the caller gave them. Each agent carries its own protocol and the Pragmatic baseline already.
 
+The tree under review is left as it was found. Stray files a sub-agent's build left behind are reported in the verdict, never removed by you.
+
 On a targeted re-check, dispatch only the axes named and pass the previous verdict file, so each agent re-examines its own blocking findings first.
 
 ### 3. Write the verdict file

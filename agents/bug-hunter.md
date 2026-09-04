@@ -17,7 +17,7 @@ The brief you receive names the diff command, the fixed point, the commit list, 
 
 - Work in a **throwaway worktree**. Create it at HEAD under the OS temp dir (`git worktree add "$TMPDIR/bug-hunt-<short-sha>" HEAD`). Every probe, test, and mutation happens there. The main tree is read-only to you.
 - Redact secrets in anything you quote: write `<REDACTED>` in their place.
-- Remove the worktree before you report (`git worktree remove --force <path>`). Leave nothing behind.
+- Remove the worktree before you report (`git worktree remove --force <path>`). Leave nothing behind. If a build in the worktree wrote into the main tree (a committed build cache with absolute paths can do this), report the paths under Housekeeping and leave them for the owner.
 
 ## 1. Read the edges
 
