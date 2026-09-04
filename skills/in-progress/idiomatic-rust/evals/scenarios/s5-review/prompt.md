@@ -1,0 +1,1 @@
+Review `src/lib.rs` in this crate as a pull-request reviewer would. For each finding give the line, what is wrong, and the rewrite you would ask for. Order the findings from most to least important. Do not edit any file.
