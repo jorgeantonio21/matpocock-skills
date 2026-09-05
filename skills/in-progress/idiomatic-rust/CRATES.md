@@ -1,12 +1,12 @@
 # Crates
 
-Read this file when you are about to write an impl by hand that a crate would derive. The list is short on purpose. None of these crates is required. Use one only when it removes hand-written code in the change you are making. Use it only when the crate is already a dependency, or when the pull request can justify it. Do not add a crate for a single use. Write the code instead. A new dependency is a per-PR decision. This file does not instruct a migration.
+Read this file when you are about to write an impl by hand that a crate would derive. The list is short on purpose. None of these crates is required, and no crate is banned. Use one only when it removes hand-written code in the change you are making. Use it only when the crate is already a dependency, or when the pull request can justify it. Do not add a crate for a single use. Write the code instead. A new dependency is a per-PR decision. This file does not instruct a migration: a project that uses a crate from "Choose by capability" keeps it.
 
 ## The set
 
 - **`thiserror` 2 and `anyhow` 1.** Use `thiserror` for an error type in a library. Use `anyhow` in a binary and in tests. The rules are in the Errors section of [SKILL.md](SKILL.md). The `thiserror` expansion is the hand-written `Display`, `source`, and `From`, so it is hot-path safe.
 
-- **`derive_more` 2.1.** Use `#[derive(Display, From, Into, FromStr)]` on a newtype instead of four delegating impls. Enable one cargo feature per derive. Derive `From` inbound only when every inner value is valid. Otherwise write a `const fn new` and derive only `Into`. The `Into` derive expands to `impl From<JobId> for u64`, which is the outbound `From` the Shape section asks for; no `Into` impl is written. Do not derive `Deref` on a newtype. The expansion is the hand-written code, so it is hot-path safe.
+- **`derive_more` 2.1.** Use `#[derive(Display, From, Into, FromStr)]` on an unconstrained newtype instead of four delegating impls. Enable one cargo feature per derive. Derive `From` and `FromStr` inbound only when every inner value is valid. The `FromStr` derive parses the inner type and wraps it, with no call to `new`, so on a validated newtype it accepts what `new` rejects. There, write `const fn new`, write `FromStr` by hand through `new`, and derive only `Display` and `Into`. The `Into` derive expands to `impl From<JobId> for u64`, which is the outbound `From` the Shape section asks for; no `Into` impl is written. Do not derive `Deref` on a newtype. The expansion is the hand-written code, so it is hot-path safe.
 
   ```rust
   #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)] // std
@@ -38,7 +38,7 @@ Read this file when you are about to write an impl by hand that a crate would de
   tracker.wait().await;
   ```
 
-- **`trait-variant` 0.1 and `dynosaur` 0.3.** Use `#[trait_variant::make(Send)]` on a trait with a native `async fn` when a spawn needs the returned future to be `Send`. Use `#[dynosaur::dynosaur(DynStore = dyn(box) Store)]` on the trait when a caller needs a trait object such as `Box<DynStore<'_>>`. Static dispatch stays free; the `dyn(box)` form boxes only the future behind the trait object, where `#[async_trait]` boxes every call. See [RUNTIME.md](RUNTIME.md) for when a trait needs async at all.
+- **`trait-variant` 0.1 and `dynosaur` 0.3.** Use `#[trait_variant::make(Send)]` on a trait with a native `async fn` when a spawn needs the returned future to be `Send`. Use `#[dynosaur::dynosaur(DynStore = dyn(box) Store)]` on the trait when a caller needs a trait object such as `Box<DynStore<'_>>`. Static dispatch through the native `async fn` returns the future unboxed. The trait object boxes each returned future, as `#[async_trait]` does. The pair saves the box on the static path only. It pays off in a crate that calls the trait statically on a path that matters. See [RUNTIME.md](RUNTIME.md) for when a trait needs async at all.
 
   ```rust
   #[trait_variant::make(Send)]
@@ -77,14 +77,22 @@ Read this file when you are about to write an impl by hand that a crate would de
 
 Use `derive_more::Display` for a type with a format string. Use `strum::Display` for a unit enum.
 
-## Do not reach for
+## Choose by capability
 
-- `validator`, `garde`: a post-construction `.validate()` that a caller can skip and that serde never runs. Put the check in the type's constructor.
-- `derive_builder`, `typed-builder`: a missing field surfaces at runtime or as a deprecation warning. Use `bon` when a builder is warranted at all.
-- `eyre`, `color-eyre`, `snafu`, `miette`, `displaydoc`: a second error convention. Use `thiserror` and `anyhow`.
-- `async-trait`: native `async fn` in a trait is stable, `trait-variant` adds the `Send` bound, and `dynosaur` gives the trait object, all without the allocation per call.
-- `lazy_static`, `once_cell`: use `std::sync::LazyLock` and `std::sync::OnceLock`.
-- `static_assertions`: write `const _: () = assert!(..);`.
-- A crate for a single use, or a crate whose proc macro would land on a hot path without a measured reason.
+The crates below overlap with the set above. None is banned. Keep the convention the project has, and do not migrate a crate to follow this file. Pick for a new crate by the capability the project needs.
+
+- **Errors.** `thiserror` and `anyhow` are the default the Errors section assumes. `snafu` gives one convention for a library and an application, with context selectors in place of `.context()`. `eyre` and `color-eyre` are `anyhow` with a pluggable report handler, for a binary that wants a custom error report. `miette` renders diagnostics with source spans, for a compiler, a linter, or a CLI that points at a line of input. `displaydoc` takes the `Display` message from the doc comment. Use one convention per crate, and the project's.
+- **Builders.** `bon` and `typed-builder` report a missing required member at compile time. `derive_builder` reports it at run time, from `build()`. For a new builder, take a compile-time checked one. Keep the one the project uses.
+- **Validation.** `validator` and `garde` derive field checks behind a `.validate()` call and report every failed field at once. That report is the product at an HTTP form boundary. A caller can skip the call, and serde does not run it. The check that establishes an invariant still lives in the type's constructor. Use the derive at the edge for the report, and the constructor for the guarantee.
+- **Async traits.** `#[async_trait]` boxes the returned future on every call, static or dynamic, and gives an object-safe trait with one attribute. Native `async fn` in a trait with `trait-variant` and `dynosaur` boxes only on the dynamic path. Behind a `Box<dyn Trait>` seam the two cost the same, and `#[async_trait]` is one attribute where the pair is two. Keep the project's choice.
+
+## Keep to std
+
+- `lazy_static`, `once_cell`: use `std::sync::LazyLock` and `std::sync::OnceLock`. Both are stable since Rust 1.80. On an older supported toolchain, `once_cell` stays.
+- `static_assertions`: write `const _: () = assert!(..);` for a predicate that const evaluation can decide, such as a size, an alignment, or a relation between two consts. It cannot state a trait bound. For a trait bound, write `const _: fn() = || { fn assert<T: Send>() {} assert::<Worker>() };`, or keep `assert_impl_all!` in a crate that already has the dependency.
+
+## The cost of a proc macro
+
+A proc macro runs at compile time. Its expansion costs nothing at run time. The cost that can land on a hot path is in the code it emits. Look for a `Box<dyn ...>`, a `format!`, a `clone`, or an allocation per call. Run `cargo expand` once on a new derive and read the output for those. Do not add a crate for a single use. Do not add a crate whose proc macro would put such code on a hot path without a measured reason.
 
 Every version above was checked against crates.io on 2026-09-04.
