@@ -1,12 +1,16 @@
 # Lints
 
+Use the project's supported Rust version and feature combinations; mutually exclusive features need separate checks instead of `--all-features`. Unknown flags and failed tool startup are incomplete checks, never zero findings.
+
 The mechanical layer of `idiomatic-rust`. This file holds the check command for the crates a diff touches, the `#[expect]` policy, and the rules the command retires from `SKILL.md`. It also holds the same lint set as a workspace block for a repo that wants it in CI. Every lint name is verified against clippy 0.1.97 on Rust 1.97.1. The Calibration section at the end holds the evidence.
 
 ## The check command
 
-Run once per crate the diff touches, then `cargo +nightly fmt -p <crate>`. Repeat `-p` for several crates. The `flags` array is shared by the three commands in this file, so the lint set is written once.
+Run once per crate the diff touches, then format with the project toolchain (`cargo fmt -p <crate>` unless its configuration requires nightly). Repeat `-p` for several crates. The `flags` array is shared by the three commands in this file, so the lint set is written once.
 
 ```bash
+# Add documented scenario exceptions here so both passes use them.
+scenario_flags=() # A CLI whose product is stdout: (-A clippy::print_stdout)
 flags=(
   -D warnings
   -W clippy::pedantic -A clippy::similar_names -A clippy::must_use_candidate -A clippy::inline_always
@@ -17,7 +21,7 @@ flags=(
   -D clippy::await_holding_lock -D clippy::large_futures
   -W unreachable_pub -W missing_debug_implementations -W unsafe_op_in_unsafe_fn
 )
-cargo clippy --no-deps -p <crate> --all-features -- "${flags[@]}"
+cargo clippy --no-deps -p <crate> --all-features -- "${flags[@]}" "${scenario_flags[@]}"
 ```
 
 What each part does:
@@ -37,18 +41,18 @@ What each part does:
 A crate that never ran pedantic reports hundreds of pre-existing findings (see Calibration). The fix obligation is the files the diff touches; the rest is the crate's backlog, reported and left alone. This prints only the findings whose primary span sits in a changed file:
 
 ```bash
-cargo clippy --no-deps -p <crate> --all-features --message-format=json -- "${flags[@]}" | jq -r --argjson files "$(git diff --name-only "$(git merge-base HEAD origin/main)" | jq -R . | jq -s .)" 'select(.reason=="compiler-message") | .message | select(.code != null) | select(any(.spans[]; .is_primary and (.file_name as $f | $files | index($f) != null))) | .rendered'
+cargo clippy --no-deps -p <crate> --all-features --message-format=json -- "${flags[@]}" "${scenario_flags[@]}" | jq -r --argjson files "$(git diff --name-only "$(git merge-base HEAD origin/main)" | jq -R . | jq -s .)" 'select(.reason=="compiler-message") | .message | select(.code != null) | select(any(.spans[]; .is_primary and (.file_name as $f | $files | index($f) != null))) | .rendered'
 ```
 
 ## Test targets
 
-The command above checks the crate's library and binaries, so `#[cfg(test)]` code is not compiled and a test's `unwrap()` never reaches the lint. Test code gets a second run over every target with the two panic lints relaxed. In a test, `unwrap` and `assert!` inside a `Result`-returning function are the idiom the Words section asks for:
+The command above checks the crate's library and binaries, so `#[cfg(test)]` code is not compiled and a test's `unwrap()` never reaches the lint. Test code gets a second run over every target with the three panic lints relaxed. In a test, `unwrap` and `assert!` inside a `Result`-returning function are the idiom the Words section asks for:
 
 ```bash
-cargo clippy --no-deps -p <crate> --all-targets --all-features -- "${flags[@]}" -A clippy::unwrap_used -A clippy::panic_in_result_fn
+cargo clippy --no-deps -p <crate> --all-targets --all-features -- "${flags[@]}" "${scenario_flags[@]}" -A clippy::unwrap_used -A clippy::expect_used -A clippy::panic_in_result_fn
 ```
 
-The two trailing `-A` flags override the `-D` for the same lints inside `flags`. The compiler applies lint flags in order, and the last one wins.
+The three trailing `-A` flags override prior levels for the same lints. The `expect_used` relaxation also respects projects that enable it themselves. The compiler applies lint flags in order, and the last one wins.
 
 The trade-off against stopping after the first run: the first run alone leaves tests, benches, and examples unlinted. The second run costs one more build of the test targets. Run the second once the first is clean, since a failing library target cancels the targets that depend on it. Both pass, or the check fails.
 
@@ -163,7 +167,7 @@ The commands were run on 2026-09-04 against Rust 1.97.1 (clippy 0.1.97). Every l
 
 ```bash
 rustup run 1.97.1 clippy-driver -W help | rg -o 'clippy::[a-z-]+' | sort -u > /tmp/clippy-lints
-for f in "${flags[@]}"; do case $f in clippy::*) rg -qx "${f//_/-}" /tmp/clippy-lints || echo "unknown: $f";; esac; done
+for f in "${flags[@]}" "${scenario_flags[@]}"; do case $f in clippy::*) rg -qx "${f//_/-}" /tmp/clippy-lints || echo "unknown: $f";; esac; done
 ```
 
 Three flags changed as a result of the first run. `module_name_repetitions` is not in the `-A` list, because it is a `restriction` lint since 1.93 and relaxing it under pedantic is a no-op. `mem_forget` is not in the `-D` picks. In a workspace with zero-copy wire types, every one of its findings came from a serialization derive expansion and none from hand-written code. The lint does not skip external macros. `-A clippy::inline_always` was added, because a low-latency workspace had 110 deliberate uses in one crate.

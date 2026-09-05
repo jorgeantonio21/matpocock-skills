@@ -16,11 +16,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SKILL_FILES = ("SKILL.md", "RUNTIME.md", "CRATES.md", "LINTS.md")
+SKILL_FILES = ("SKILL.md", "RUNTIME.md", "CRATES.md", "LINTS.md", "INVARIANTS.md")
 BRIEF_KEYS = ("command", "file_path", "pattern")
 BRIEF_WIDTH = 120
 CHECK_NEEDLES = ("clippy::pedantic", "flags=(")
-FMT_NEEDLES = ("+nightly fmt",)
+FMT_NEEDLES = ("+nightly fmt", "cargo fmt", "rustfmt")
 
 
 @dataclass
@@ -51,7 +51,7 @@ class Transcript:
 
     def finished(self) -> bool:
         """True when the run reached its result event."""
-        return bool(self.result)
+        return bool(self.result) and not self.result.get("is_error", False) and self.result.get("subtype", "success") == "success"
 
     def skill_files_read(self) -> list[str]:
         """The skill files named in any tool call's input, sorted."""
@@ -97,23 +97,26 @@ def print_summary(results: Path) -> None:
     """One line per run under results/, in scenario then arm order."""
     print(
         f"{'scenario':14} {'arm':6} {'exit':4} {'wall':>5} {'turns':>5} {'cost':>6}  "
-        "model, skill files read, check, fmt"
+        "model, skill files read, check, fmt, run"
     )
-    for path in sorted(results.glob("*/*/transcript.jsonl")):
+    for path in sorted(results.rglob("transcript.jsonl")):
         scenario, arm = path.parts[-3:-1]
         transcript = parse_transcript(path)
         result = transcript.result
         models = [
             model for model in result.get("modelUsage", {}) if "haiku" not in model
         ]
-        exit_word = "ok" if transcript.finished() else "RUN"
-        wall = result.get("duration_ms", 0) // 1000
+        exit_word = "ok" if transcript.finished() else "incomplete"
+        duration = result.get("duration_ms")
+        wall = duration // 1000 if duration is not None else "unknown"
         turns = result.get("num_turns", "")
-        cost = result.get("total_cost_usd", 0) or 0
+        reported_cost = result.get("total_cost_usd")
+        cost = f"{reported_cost:.2f}" if reported_cost is not None else "unknown"
         print(
-            f"{scenario:14} {arm:6} {exit_word:4} {wall:>5} {turns!s:>5} {cost:6.2f}  "
+            f"{scenario:14} {arm:6} {exit_word:4} {wall:>5} {turns!s:>5} {cost:>7}  "
             f"{models} read={transcript.skill_files_read()} "
-            f"check={transcript.ran(CHECK_NEEDLES)} fmt={transcript.ran(FMT_NEEDLES)}"
+            f"check={transcript.ran(CHECK_NEEDLES)} fmt={transcript.ran(FMT_NEEDLES)} "
+            f"run={path.parent.relative_to(results)}"
         )
 
 
@@ -127,6 +130,8 @@ def write_meta(args: argparse.Namespace) -> None:
         "arm": args.arm,
         "model": args.model,
         "exit_status": args.status,
+        "complete": args.status == 0 and transcript.finished(),
+        "result_subtype": transcript.result.get("subtype"),
         "wall_seconds": args.finished - args.started,
         "num_turns": transcript.result.get("num_turns"),
         "total_cost_usd": transcript.result.get("total_cost_usd"),
@@ -159,7 +164,7 @@ def main() -> None:
     meta.add_argument("status", type=int, help="the claude process exit status")
     meta.add_argument("started", type=int, help="epoch seconds when the run started")
     meta.add_argument("finished", type=int, help="epoch seconds when the run finished")
-    meta.add_argument("arm", help="bare or skill")
+    meta.add_argument("arm", help="bare, merged, or skill")
     meta.add_argument("scenario", help="the scenario name")
     meta.add_argument("model", help="the model passed to run.sh, or 'default'")
 

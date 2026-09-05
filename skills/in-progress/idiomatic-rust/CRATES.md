@@ -1,90 +1,42 @@
 # Crates
 
-Read this file when you are about to write an impl by hand that a crate would derive. The list is short on purpose. None of these crates is required. Use one only when it removes hand-written code in the change you are making. Use it only when the crate is already a dependency, or when the pull request can justify it. Do not add a crate for a single use. Write the code instead. A new dependency is a per-PR decision. This file does not instruct a migration.
+Read this when choosing a dependency or derive. Respect existing project conventions and supported Rust versions. No dependency migration is required just to follow this skill. Use standard facilities or a small implementation when they suffice; a dependency earns its place through meaningful repeated capability, maintenance, or diagnostics.
 
-## The set
+Do not add a crate for a single use. Do not add a proc-macro crate whose generated runtime code would land on a hot path without a measured reason. Macro expansion itself happens at compile time: inspect the generated runtime code for allocation, dispatch, and synchronization. This constraint is not a blanket ban on proc macros, nor a claim that every derive is free.
 
-- **`thiserror` 2 and `anyhow` 1.** Use `thiserror` for an error type in a library. Use `anyhow` in a binary and in tests. The rules are in the Errors section of [SKILL.md](SKILL.md). The `thiserror` expansion is the hand-written `Display`, `source`, and `From`, so it is hot-path safe.
+## Selection guidance
 
-- **`derive_more` 2.1.** Use `#[derive(Display, From, Into, FromStr)]` on a newtype instead of four delegating impls. Enable one cargo feature per derive. Derive `From` inbound only when every inner value is valid. Otherwise write a `const fn new` and derive only `Into`. The `Into` derive expands to `impl From<JobId> for u64`, which is the outbound `From` the Shape section asks for; no `Into` impl is written. Do not derive `Deref` on a newtype. The expansion is the hand-written code, so it is hot-path safe.
+| Need | Capabilities and tradeoffs |
+| --- | --- |
+| Typed errors | `thiserror` generates `Display`, sources, and conversions. Handwritten std implementations can suffice for a small error surface. `snafu` adds context selectors; `displaydoc` derives display text. Choose according to caller matching and the existing error convention. |
+| Application reports | `anyhow` and `eyre` provide context and erased errors. `color-eyre` and `miette` can improve terminal diagnostics. Preserve structured errors where callers need to act; a small CLI or test can use `Box<dyn Error>` without another dependency. |
+| Newtype conversion | `derive_more` can remove repetitive delegation. Inbound `From` and delegating `FromStr` are valid only for unconstrained wrappers. Validated wrappers need checked conversion. Outbound delegation and `Display` do not create an invalid value. |
+| Validation | `validator` and `garde` can express field checks and aggregate reports. A raw DTO may derive them; ensure conversion into the validated type always runs the checks. Post-construction validation that callers can skip does not establish an invariant. Serde's `try_from` can enforce this boundary. |
+| Builders | `bon` and `typed-builder` can encode required fields at compile time. `derive_builder` can report missing fields at runtime. Handwritten constructors/builders may be smaller. In every case, validate cross-field relationships at build time; required fields alone do not establish semantic validity. |
+| Enum conversion | `strum` is useful for repeated parsing, display, and variant enumeration. A small match may suffice. Generated iterator state is not itself evidence of heap allocation. Check accepted spellings and compatibility before deriving parsing. |
+| Iteration | Prefer a std adaptor when it expresses the operation. `itertools` earns its place for repeated operations unavailable in std. Allocation depends on the chosen adaptor and usage; inspect it rather than calling all adaptors zero-cost. |
+| Async runtime utilities | `tokio-util` provides cancellation, tracking, and codecs when Tokio is already appropriate. Define draining and frame validation explicitly. See [RUNTIME.md](RUNTIME.md) for internal synchronization and hot paths. |
+| Async trait dispatch | Native methods/`impl Future` suit static calls; boxed-future methods, `async-trait`, or adapters support dynamic calls. `trait-variant` can supply Send variants. `dynosaur` avoids returned-future boxing on static dispatch but still boxes on dynamic dispatch. Choose the required dispatch and bounds before choosing a macro. |
+| Tests | Table-driven std tests can suffice. `rstest` helps when separate named cases and reusable fixtures matter. `pretty_assertions` helps inspect large differences. Keep these as dev-dependencies when chosen. |
 
-  ```rust
-  #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)] // std
-  #[derive(Display, From, Into)] // derive_more
-  pub struct JobId(u64);
-  ```
+## Retained standard-library preferences
 
-- **`strum` 0.28.** Use `#[derive(VariantArray, EnumCount, EnumString, Display)]` on a unit enum instead of a hand-written `ALL` array, a `COUNT` const, or a match-table `FromStr`. Use `VariantArray`, which is a `'static` slice. Do not use `EnumIter`, which allocates an iterator struct. `ParseError` carries no payload, so it is hot-path safe.
+- `lazy_static`, `once_cell`: use `std::sync::LazyLock` and `std::sync::OnceLock` when the supported Rust version and needed APIs permit. `OnceLock` stabilized in Rust 1.70 and `LazyLock` in 1.80; individual methods may require newer versions. Older MSRVs or missing capabilities can justify retaining an existing dependency.
+- `static_assertions`: write `const _: () = assert!(..);` for **const-evaluable predicates**. This is not a replacement for every trait assertion. Use an ordinary compile-time trait-bound assertion for a positive trait guarantee; choose a suitable method for negative or other unsupported assertions.
 
-  ```rust
-  #[derive(Clone, Copy, Debug, PartialEq, Eq)] // std
-  #[derive(VariantArray, EnumCount, EnumString, Display)] // strum
-  #[strum(serialize_all = "lowercase")]
-  pub enum Priority { Low, Normal, High }
-  // Priority::VARIANTS, Priority::COUNT, "high".parse::<Priority>()
-  ```
+```rust
+const HEADER_BYTES: usize = 8;
+const _: () = assert!(HEADER_BYTES <= 16);
+const _: fn() = || {
+    fn assert_send<T: Send>() {}
+    assert_send::<Vec<u8>>();
+};
+```
 
-- **`itertools` 0.15.** Use `tuple_windows` for adjacent pairs, `chunk_by` for runs in sorted input, `kmerge` for a k-way merge, and `exactly_one` for an expected single result. Use a std method first where one exists: `slice::chunk_by`, `Iterator::is_sorted`, `inspect`. Write a typed `collect()`. Do not use `collect_vec()`. The named adaptors are zero-cost. `sorted_*`, `unique`, `counts`, and `into_group_map` allocate, so use them in tests and cold paths only.
+The second assertion proves the stored type is Send. To require a method's returned future to be Send, assert that future as shown in [RUNTIME.md](RUNTIME.md).
 
-- **`tokio-util` 0.7.** Use `CancellationToken` for shutdown and `TaskTracker` for a set of workers at the async edge, as [RUNTIME.md](RUNTIME.md) describes. The token takes a mutex on every check, so bridge it to an atomic for a hot loop. Use `codec::Framed` with a `Decoder` for length-prefixed framing at a wire edge. No proc macro.
+## Sources
 
-  ```rust
-  let token = CancellationToken::new();
-  let tracker = TaskTracker::new();
-  for worker in workers { tracker.spawn(run(worker, token.child_token())); }
-  signal::ctrl_c().await?;
-  token.cancel();
-  tracker.close();
-  tracker.wait().await;
-  ```
-
-- **`trait-variant` 0.1 and `dynosaur` 0.3.** Use `#[trait_variant::make(Send)]` on a trait with a native `async fn` when a spawn needs the returned future to be `Send`. Use `#[dynosaur::dynosaur(DynStore = dyn(box) Store)]` on the trait when a caller needs a trait object such as `Box<DynStore<'_>>`. Static dispatch stays free; the `dyn(box)` form boxes only the future behind the trait object, where `#[async_trait]` boxes every call. See [RUNTIME.md](RUNTIME.md) for when a trait needs async at all.
-
-  ```rust
-  #[trait_variant::make(Send)]
-  #[dynosaur::dynosaur(DynStore = dyn(box) Store)]
-  pub trait Store {
-      async fn put(&self, key: Key, value: Vec<u8>) -> Result<(), StoreError>;
-  }
-  ```
-
-- **`bon` 3.10.** Use it only when a config struct has many optional fields and needs a builder. Put `#[bon::bon]` on the impl block and `#[builder]` on `new`. A missing required member is then a compile error. A fallible `new` becomes a fallible `build()`, so validation lives in `new` and the fields stay private. Compile time grows with the member count, so use it for config-sized structs only. The runtime cost is zero.
-
-  ```rust
-  #[bon::bon]
-  impl Server {
-      #[builder]
-      pub fn new(port: Port, #[builder(default = Duration::from_secs(5))] timeout: Duration) -> Self {
-          Self { port, timeout }
-      }
-  }
-  ```
-
-- **`rstest` 0.26.** Use `#[rstest]` with one `#[case::name(..)]` per input row instead of a table looped inside one `#[test]`. Each case is then its own named test. Use `#[fixture] fn scheduler() -> Scheduler`, which rstest resolves by argument name, instead of a `fn setup()` called at the top of every test. Dev-dependency.
-
-  ```rust
-  #[rstest]
-  #[case::empty("", None)]
-  #[case::high("high", Some(Priority::High))]
-  fn test_parses_priority(#[case] raw: &str, #[case] expected: Option<Priority>) {
-      assert_eq!(raw.parse::<Priority>().ok(), expected);
-  }
-  ```
-
-- **`pretty_assertions` 1.4.** Write `use pretty_assertions::assert_eq;` at the top of `mod tests`. A failed `assert_eq!` then prints a diff instead of two `Debug` dumps. Dev-dependency.
-
-## One rule where two overlap
-
-Use `derive_more::Display` for a type with a format string. Use `strum::Display` for a unit enum.
-
-## Do not reach for
-
-- `validator`, `garde`: a post-construction `.validate()` that a caller can skip and that serde never runs. Put the check in the type's constructor.
-- `derive_builder`, `typed-builder`: a missing field surfaces at runtime or as a deprecation warning. Use `bon` when a builder is warranted at all.
-- `eyre`, `color-eyre`, `snafu`, `miette`, `displaydoc`: a second error convention. Use `thiserror` and `anyhow`.
-- `async-trait`: native `async fn` in a trait is stable, `trait-variant` adds the `Send` bound, and `dynosaur` gives the trait object, all without the allocation per call.
-- `lazy_static`, `once_cell`: use `std::sync::LazyLock` and `std::sync::OnceLock`.
-- `static_assertions`: write `const _: () = assert!(..);`.
-- A crate for a single use, or a crate whose proc macro would land on a hot path without a measured reason.
-
-Every version above was checked against crates.io on 2026-09-04.
+- [Serde checked conversion](https://serde.rs/container-attrs.html#try_from): deserializes the raw type and runs fallible conversion.
+- [Dynosaur dispatch](https://docs.rs/dynosaur/0.3.1/dynosaur/): return boxing differs between static and dynamic calls.
+- [OnceLock](https://doc.rust-lang.org/std/sync/struct.OnceLock.html) and [LazyLock](https://doc.rust-lang.org/std/sync/struct.LazyLock.html): check method-level stabilization against the project's MSRV.

@@ -1,0 +1,224 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,34 +1,209 @@
+ use serde::Deserialize;
+-use std::{num::NonZeroI32, str::FromStr};
+-
++use std::{fmt, num::NonZeroI32, num::ParseIntError, str::FromStr};
++
++/// A bounded count in the inclusive range `0..=Limit::MAX`.
++///
++/// Every constructor (`new`, `TryFrom<u8>`, `FromStr`, and `Deserialize`)
++/// enforces the range, so a `Limit` value is always valid.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
++#[serde(try_from = "u8")]
+ pub struct Limit(u8);
+
+ impl Limit {
++    /// The largest value a `Limit` can hold.
++    pub const MAX: u8 = 10;
++
++    /// Returns `Some(Limit)` if `value <= Limit::MAX`, otherwise `None`.
+     pub const fn new(value: u8) -> Option<Self> {
+-        if value <= 10 { Some(Self(value)) } else { None }
+-    }
+-    pub fn get(self) -> u8 { self.0 }
+-}
++        if value <= Self::MAX {
++            Some(Self(value))
++        } else {
++            None
++        }
++    }
++
++    pub const fn get(self) -> u8 {
++        self.0
++    }
++}
++
++/// Error returned when text or an integer cannot be converted into a `Limit`.
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub enum ParseLimitError {
++    /// The input was not a valid `u8`.
++    Int(ParseIntError),
++    /// The input was a valid `u8` but exceeds `Limit::MAX`.
++    OutOfRange(u8),
++}
++
++impl fmt::Display for ParseLimitError {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        match self {
++            Self::Int(err) => write!(f, "invalid limit: {err}"),
++            Self::OutOfRange(value) => {
++                write!(f, "limit {value} is out of range 0..={}", Limit::MAX)
++            }
++        }
++    }
++}
++
++impl std::error::Error for ParseLimitError {
++    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
++        match self {
++            Self::Int(err) => Some(err),
++            Self::OutOfRange(_) => None,
++        }
++    }
++}
++
++impl From<ParseIntError> for ParseLimitError {
++    fn from(err: ParseIntError) -> Self {
++        Self::Int(err)
++    }
++}
++
++impl TryFrom<u8> for Limit {
++    type Error = ParseLimitError;
++
++    fn try_from(value: u8) -> Result<Self, Self::Error> {
++        Self::new(value).ok_or(ParseLimitError::OutOfRange(value))
++    }
++}
++
+ impl FromStr for Limit {
+-    type Err = std::num::ParseIntError;
+-    fn from_str(raw: &str) -> Result<Self, Self::Err> { raw.parse().map(Self) }
++    type Err = ParseLimitError;
++
++    fn from_str(raw: &str) -> Result<Self, Self::Err> {
++        raw.parse::<u8>()?.try_into()
++    }
+ }
+
+ pub fn decode(raw: &str) -> Result<Limit, serde_json::Error> {
+     serde_json::from_str(raw)
+ }
+
++/// Returns the negation of `value`, or `None` if the result is not
++/// representable (only `NonZeroI32::MIN` overflows).
+ pub fn negate(value: NonZeroI32) -> Option<NonZeroI32> {
+-    NonZeroI32::new(-value.get())
++    value.checked_neg()
+ }
+
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++
++    fn nz(value: i32) -> NonZeroI32 {
++        NonZeroI32::new(value).expect("test value must be nonzero")
++    }
++
+     #[test]
+     fn ordinary_values() {
+         assert_eq!(decode("3").unwrap().get(), 3);
+-        assert_eq!(negate(NonZeroI32::new(2).unwrap()).unwrap().get(), -2);
+-    }
+-}
++        assert_eq!(negate(nz(2)).unwrap().get(), -2);
++    }
++
++    #[test]
++    fn new_accepts_only_zero_through_max() {
++        assert_eq!(Limit::new(0).map(Limit::get), Some(0));
++        assert_eq!(Limit::new(Limit::MAX).map(Limit::get), Some(10));
++        assert_eq!(Limit::new(Limit::MAX + 1), None);
++        assert_eq!(Limit::new(u8::MAX), None);
++    }
++
++    #[test]
++    fn new_is_usable_in_const_context() {
++        const ZERO: Option<Limit> = Limit::new(0);
++        const TOO_BIG: Option<Limit> = Limit::new(11);
++        assert_eq!(ZERO.map(Limit::get), Some(0));
++        assert_eq!(TOO_BIG, None);
++    }
++
++    #[test]
++    fn try_from_u8_rejects_out_of_range() {
++        assert_eq!(Limit::try_from(10).map(Limit::get), Ok(10));
++        assert_eq!(Limit::try_from(11), Err(ParseLimitError::OutOfRange(11)));
++    }
++
++    #[test]
++    fn from_str_accepts_bounds() {
++        assert_eq!("0".parse::<Limit>().map(Limit::get), Ok(0));
++        assert_eq!("10".parse::<Limit>().map(Limit::get), Ok(10));
++    }
++
++    #[test]
++    fn from_str_rejects_out_of_range() {
++        assert_eq!("11".parse::<Limit>(), Err(ParseLimitError::OutOfRange(11)));
++        assert_eq!(
++            "255".parse::<Limit>(),
++            Err(ParseLimitError::OutOfRange(255))
++        );
++    }
++
++    #[test]
++    fn from_str_rejects_non_u8_input() {
++        for raw in ["", "abc", "-1", "3.5", " 3", "300"] {
++            assert!(
++                matches!(raw.parse::<Limit>(), Err(ParseLimitError::Int(_))),
++                "expected integer parse error for {raw:?}"
++            );
++        }
++    }
++
++    #[test]
++    fn parse_error_display_and_source() {
++        let out_of_range = "11".parse::<Limit>().unwrap_err();
++        assert_eq!(out_of_range.to_string(), "limit 11 is out of range 0..=10");
++        assert!(std::error::Error::source(&out_of_range).is_none());
++
++        let int = "abc".parse::<Limit>().unwrap_err();
++        assert!(int.to_string().starts_with("invalid limit: "));
++        assert!(std::error::Error::source(&int).is_some());
++    }
++
++    #[test]
++    fn decode_accepts_bounds() {
++        assert_eq!(decode("0").unwrap().get(), 0);
++        assert_eq!(decode("10").unwrap().get(), 10);
++    }
++
++    #[test]
++    fn decode_rejects_out_of_range() {
++        let err = decode("11").unwrap_err();
++        assert!(err.is_data(), "expected a data error, got {err}");
++        assert!(
++            err.to_string().contains("out of range"),
++            "unexpected message: {err}"
++        );
++        assert!(decode("255").is_err());
++        assert!(decode("256").is_err());
++        assert!(decode("-1").is_err());
++    }
++
++    #[test]
++    fn decode_rejects_wrong_json_types() {
++        for raw in ["\"3\"", "3.5", "null", "true", "[3]", "{\"0\":3}", ""] {
++            assert!(decode(raw).is_err(), "expected error for {raw:?}");
++        }
++    }
++
++    #[test]
++    fn negate_handles_every_sign_and_bound() {
++        assert_eq!(negate(nz(1)), Some(nz(-1)));
++        assert_eq!(negate(nz(-1)), Some(nz(1)));
++        assert_eq!(negate(nz(i32::MAX)), Some(nz(-i32::MAX)));
++        assert_eq!(negate(nz(i32::MIN + 1)), Some(nz(i32::MAX)));
++    }
++
++    #[test]
++    fn negate_min_returns_none_instead_of_overflowing() {
++        assert_eq!(negate(NonZeroI32::MIN), None);
++    }
++
++    #[test]
++    fn negate_round_trips() {
++        for value in [1, -1, 7, -7, i32::MAX, -i32::MAX] {
++            let once = negate(nz(value)).unwrap();
++            assert_eq!(negate(once), Some(nz(value)));
++        }
++    }
++}

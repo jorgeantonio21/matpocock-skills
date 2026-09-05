@@ -1,58 +1,86 @@
 # Runtime
 
-Rules for async tasks, OS threads, and the boundary between them. Follow them together with [SKILL.md](SKILL.md).
+Choose concurrency from the operations and their requirements. These are contextual defaults except where a correctness or hot-path constraint is explicit.
 
-- **Two regimes.** The **edge** is the async side: tokio tasks that do I/O and handle thousands of events per second. The edge can afford a short lock or one allocation per event. The **hot path** is a loop that handles a message in microseconds: a pinned worker thread, a ring-buffer consumer, a decoder. On the hot path, a lock, a heap allocation, or a syscall per message is a defect. Every rule below applies to the edge unless it says hot path. A web service, a CLI tool, or a batch job has no hot path, so only the edge rules apply there. Measure before you move a rule across that line.
+## Find the hot path
 
-- **Cancel first, at the edge.** Pass a `CancellationToken` to every long-lived task. Put `cancel.cancelled()` as the first arm of every `select!`, and write `biased;` as the first line of the `select!`. With `biased;`, tokio polls the arms in the written order and skips the random branch shuffle, so the cancel arm is checked first. Create one token per subsystem at setup with `child_token()`. Do not signal shutdown with a `broadcast` channel of `()`.
+Identify hot paths from latency/throughput requirements and measurements, not from the application's category. A web service, CLI decoder, batch job, or inference scheduler can each have one. Measure allocations, blocking, I/O, queueing, and dispatch where they affect that budget. Cold paths have no universal thread, channel, or allocation prescription.
 
-  ```rust
-  tokio::select! {
-      biased;
-      _ = cancel.cancelled() => return,
-      _ = tokio::time::sleep(backoff) => {}
-  }
-  ```
+**Strong preference: avoid locks and mutexes on hot paths.** First consider exclusive ownership, partitioned state, immutable snapshots, or appropriate atomic/lock-free operations. These alternatives must preserve the whole operation's correctness. A collection called concurrent, or a channel, may use internal locks; inspect the actual implementation and operation.
 
-- **Only cancel-safe futures in `select!`.** When one arm completes, `select!` drops the futures of the other arms. A future that has consumed input and not yet returned it loses that input. `recv`, `sleep`, `cancelled`, and `changed` are cancel safe. `read_exact`, `write_all`, and `send` on a bounded channel are not. Run those to completion outside the `select!`, or create the future once, pin it, and poll `&mut fut` across iterations.
+Allow a hot-path lock only when no viable alternative preserves correctness. Hold it for only a few lines of necessary shared-state access. Keep preparation, allocation, I/O, and callbacks outside the critical section; never hold the guard across an await. Explain locally why locking is necessary, and assess contention and latency. A short critical section does not bound time spent waiting to acquire the lock. This exception also governs a lock shared with a cold path.
 
-- **Cancellation on the hot path.** `CancellationToken::is_cancelled()` takes a mutex on every call, and `cancelled()` takes it on every poll. `clone()`, `child_token()`, and drop take the mutex too and can restructure the token tree. Under contention with `cancel()`, these calls can stall for milliseconds. So: do not create, clone, or drop a token per request. Do not poll `cancelled()` per message in a fast loop. Bridge the token to an atomic once, in one watcher task, and read the atomic in the loop. The flag carries no data, so `Relaxed` ordering is enough. A sync OS thread reads the same atomic. Check the flag once per batch, not once per message.
+Choose a suitable mutex from project requirements, including poisoning, fairness, runtime blocking, and dependency policy. `std::sync::Mutex` and `parking_lot::Mutex` are both legitimate choices. Outside hot paths, an async mutex can be appropriate when an operation must retain exclusive access over I/O; account for serialization, cancellation, and deadlock. Prefer a lexical scope or a synchronous helper to release ordinary guards before awaiting.
 
-  ```rust
-  let stop = Arc::new(AtomicBool::new(false));
-  tokio::spawn({
-      let stop = Arc::clone(&stop);
-      async move { cancel.cancelled().await; stop.store(true, Ordering::Relaxed); }
-  });
-  // In the hot loop, once per drained batch:
-  if stop.load(Ordering::Relaxed) { break; }
-  ```
+## Ownership and communication
 
-- **Share without a lock.** Prefer a wait-free or lock-free structure to a lock, in both regimes. A lock blocks every thread that contends for it, and a blocked thread on the hot path misses its deadline. A wait-free operation completes in a bounded number of steps whatever the other threads do. A lock-free operation guarantees that some thread makes progress. Prefer wait-free where a structure offers it, lock-free otherwise. Use an atomic for a flag, a counter, or one small value: `AtomicBool`, `AtomicU64`, `AtomicUsize`. Use an SPSC ring such as `rtrb` between two dedicated threads; its push and pop are wait-free. Use `crossbeam::queue::ArrayQueue` (bounded) or `SegQueue` (unbounded) when several threads produce. Use `crossbeam-channel` or `flume` for a sync work queue with blocking receivers. Use `arc_swap::ArcSwap` to publish a snapshot that many readers load and one writer replaces. A concurrent map such as `dashmap` shards a lock. Use it only when readers and writers touch different keys, and keep it off the hot path. Take a lock only when one operation must read and write several fields together and no structure above fits. Do not use `std::sync::Mutex`. When a lock is the choice, use `parking_lot` and hold it for a few lines. Write a comment that says why no lock-free structure fits.
+- Prefer a single owner when that naturally serializes state changes. A decoder library can borrow a buffer; an inference scheduler can own admission state; a small CLI may need no concurrency at all.
+- An `mpsc` is a useful default for an async work queue. `oneshot` suits one reply, `watch` suits current state, and `broadcast` suits fan-out if consumers handle lag. Establish capacity, backpressure, closure, and draining semantics. Existing channels or concurrent structures are valid when they meet these requirements.
+- Use snapshots when readers need a consistent version while a writer replaces it. Use a bounded SPSC ring for two dedicated threads only when that ownership and capacity fit. Multiple producers require a suitable protocol. Wait-free operations bound their own steps; lock-free operations guarantee system-wide progress, not each caller's latency. Neither alone proves a wall-clock deadline.
+- A dedicated thread, core affinity, batching, and preallocation can help measured workloads. They are options, not the required boundary for every async application. Own thread and task handles so shutdown accounts for completion, failure, and deliberately detached work. Keep blocking operations off runtime workers when they would stall other tasks.
 
-- **Atomic orderings.** Use `Relaxed` for a flag or a counter that carries no other data. When the atomic publishes data written before the store, use `Release` on the store and `Acquire` on the load. Use `SeqCst` only with a comment that names the ordering between two atomics that the code needs. Do not write `SeqCst` by default.
+## Cancellation
 
-- **The spawn shape.** Write `fn spawn_x(deps, cancel: CancellationToken, log: Logger) -> JoinHandle<()>`. State the exit conditions in the doc comment. Keep each `select!` arm to one line. Move a longer arm body into a named `async fn`.
+Define whether shutdown aborts, drains, or completes already admitted work. A `CancellationToken` is convenient for a task tree; channel closure or an existing shutdown mechanism can suffice. A `biased;` Tokio `select!` with cancellation first gives it polling priority when ready. Use that ordering when cancellation priority is intended; account for fairness among the remaining arms.
 
-- **Own every handle.** Store a `JoinHandle` or await it. Do not drop it. Use `JoinSet` when you read the results. Use `TaskTracker` when you do not. At shutdown, call `tracker.close()` and then `tracker.wait().await`. Both operate at spawn granularity, so they cost nothing per message.
+Check cancellation safety for the exact API before placing a future in `select!`. Losing an arm drops its future. Tokio `mpsc::Receiver::recv`, `watch::Receiver::changed`, and sleeps are cancellation-safe for their documented purposes. `read_exact`, `write_all`, or a bounded send may lose partial progress, queue position, or an owned message. Complete the operation separately or retain a pinned future across iterations; retaining it does not protect it from eventual task cancellation. Define recovery for that case. See [Tokio's cancellation-safety table](https://docs.rs/tokio/latest/tokio/macro.select.html#cancellation-safety).
 
-- **One channel per role, at the edge.** Use `mpsc` for a work queue. Use `oneshot` for a request and its reply. Use `watch` for current state that a task reads before it acts. Use `broadcast` for fan-out, and handle `Lagged` explicitly. At the edge, a work queue is an `mpsc`, not a lock-free queue plus a `Notify`. These channels take a lock or a semaphore per operation, and a `oneshot` allocates per request. On the hot path, use the ring or queue from "Share without a lock". Read a `watch` value once per batch, not per message.
+A cancellation token can use internal mutexes. Check the pinned dependency before polling it per message. Where this would put a lock on the hot path, a watcher can bridge cancellation to an atomic stop flag. Own the watcher handle, account for notification delay, and choose batch size from shutdown latency. `Relaxed` is enough only if the flag carries no other data or completion guarantee.
 
-- **A queue and a thread at the boundary.** Push from async producers into a lock-free queue. Drain the queue on one OS thread. Create that thread with `thread::Builder::new().name(..)` and pin it to a core. Drain everything that is ready, process the batch, then check the stop flag. Send a reply through a `oneshot` that you find by request id at the edge. On the hot path, correlate by id in a preallocated slab, not in a map that allocates. Name every long-lived OS thread, so it appears under its own name in a profile. Store the `JoinHandle` the builder returns, and join it at shutdown. Do not call `block_on` inside async code. Do not share a mutex between the edge and the hot path.
+Use `JoinSet` when task results matter, or `TaskTracker` to wait for tracked tasks. With a tracker, close spawning and then await completion. Neither the tracker nor a token defines how to preserve queued work; that is the subsystem's shutdown contract.
 
-  ```rust
-  let drainer = thread::Builder::new()
-      .name(format!("drain-{queue_name}"))
-      .spawn(move || {
-          if let Some(core) = config.core_id { core_affinity::set_for_current(core); }
-          drain(queue, stop)
-      })?;
-  ```
+## Async traits and dispatch
 
-- **Async in a trait is a dispatch decision.** In an engine, define the seam over sync methods, such as `PollEvents` or `TryDequeue<T>`, with a no-op impl for tests. Keep the engine's async code in free functions and inherent `async fn`. In a service with a pluggable backend, such as a store or a transport behind a `Box<dyn Trait>`, an async trait is the right boundary. Write a native `async fn` in the trait. Add `#[trait_variant::make(Send)]` when a spawn needs the future to be `Send`. Add `#[dynosaur::dynosaur(DynStore = dyn(box) Store)]` when a caller needs a trait object (see [CRATES.md](CRATES.md)). Use `#[async_trait]` only in a crate that already uses it.
+A pluggable store or transport can reasonably expose async behavior. Native `async fn` or a method returning `impl Future` suits static dispatch. Spell out the returned future's `Send` bound when callers require it; `trait-variant` can generate variants if useful. Native async methods alone do not make a trait dyn-compatible on the evaluation toolchain.
 
-- **`Send` at the spawn boundary.** `tokio::spawn` needs a `Send + 'static` future. A type is `Send` when every field is `Send`, and `Sync` when a shared `&T` is `Send`. `Rc`, a raw pointer, a `MutexGuard` held across an `.await`, and `dyn Trait` without `+ Send` make a future `!Send`. `RefCell` and `Cell` are `Send` but not `Sync`, so an `Arc<RefCell<T>>` or a `&RefCell<T>` held across an `.await` makes the future `!Send`. Fix the type, not the spawn. Use `Arc` for `Rc`. Use an atomic or a `parking_lot::Mutex` for a `RefCell` or a `Cell` that is shared. Write `dyn Trait + Send + Sync` in a shared box. Drop the guard before the `.await`. Use `spawn_local` on a `LocalSet` only for a value that must stay on one thread. Pin a type's `Send` with `const _: fn() = || { fn assert_send<T: Send>() {} assert_send::<Worker>() };`, so a regression fails the build. Do not write `unsafe impl Send` or `unsafe impl Sync`.
+For dynamic dispatch, use an object-safe boxed-future method, `async-trait`, or another adapter that fits the project's conventions. `dynosaur` is one option: static calls avoid returned-future boxing, while dynamic calls still box the returned future. This does not mean all static method bodies are allocation-free. Weigh per-call allocation and dispatch against plugin flexibility, code size, and implementation complexity; no particular crate is required. See [dynosaur's dispatch description](https://docs.rs/dynosaur/0.3.1/dynosaur/).
 
-- **Locks and `.await`.** When a lock survives "Share without a lock", do not hold its guard across an `.await`. Drop the guard before the await, or move the work into a sync fn. Use `parking_lot` for a short critical section at the edge. Alias it with `use parking_lot::Mutex as SyncMutex;` when a tokio lock is in scope. Do not use `tokio::sync::Mutex`, `Notify`, or any lock on the hot path.
+A synchronous seam suits synchronous operations. Do not force a sync seam, generics, or a dedicated thread merely because the code is latency-sensitive. Check the generated runtime code and measure the path that matters.
 
-- **Use the named combinators, at the edge.** Use `buffer_unordered(n)`, `ready_chunks(n)`, `try_next`, `take_until(cancel.cancelled())`, and `FuturesUnordered`. Use `tokio::select!` and `tokio::join!`. Do not use `futures::select!`. Do not call `.boxed()` per message. These combinators allocate, so keep them off the hot path. Use `Framed` with a `Decoder` at the wire edge (see [CRATES.md](CRATES.md)).
+## Send belongs to the value being moved
+
+`tokio::spawn` requires a `Send + 'static` future and a compatible output. `Cell<T>` and `RefCell<T>` are `Send` when `T: Send`, but are not `Sync`. Owning one in a task can be fine. Sharing `&RefCell<T>` across an await, or using `Arc<RefCell<T>>` across threads, does not satisfy the required bounds. `Arc` does not make its contents thread-safe. `Rc`, non-Send guards, or non-Send trait objects retained across an await can make the future non-Send.
+
+A bound assertion on a stored type proves only that type's bound. Its methods can create non-Send locals or borrow a non-Sync field. Assert the actual returned future when that is the guarantee needed:
+
+```rust
+use std::future::Future;
+
+struct Worker;
+impl Worker {
+    async fn run(&self) {}
+}
+
+fn assert_send<T: Send>(_: T) {}
+fn assert_spawnable<F>(_: F)
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{}
+
+let worker = Worker;
+assert_send(worker.run()); // Checks this method's future, not just Worker.
+assert_spawnable(async move { worker.run().await });
+```
+
+The following regression probe must fail: the owned worker is Send, but its method retains a shared borrow of a non-Sync field across suspension.
+
+```compile_fail,E0277
+use std::{cell::Cell, future::pending};
+struct Worker(Cell<u32>);
+impl Worker {
+    async fn run(&self) -> u32 {
+        pending::<()>().await;
+        self.0.get()
+    }
+}
+fn assert_type_send<T: Send>() {}
+fn assert_send<T: Send>(_: T) {}
+assert_type_send::<Worker>();
+let worker = Worker(Cell::new(0));
+assert_send(worker.run());
+```
+
+Use a local executor when thread confinement is intended. Choose exclusive ownership, atomics, or a suitable mutex for actual shared mutation. Do not add `unsafe impl Send` or `Sync` to silence a spawn error; an unsafe implementation requires an independently justified safety contract.
+
+For atomics, establish the synchronization requirement first. `Relaxed` suits independent counters and flags with no publication obligation. Release/acquire can publish other writes when the load observes the corresponding store. Stronger orderings may simplify a correct algorithm; weaker ordering is not automatically an optimization worth making.

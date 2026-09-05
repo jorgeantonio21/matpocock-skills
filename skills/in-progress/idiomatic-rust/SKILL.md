@@ -1,163 +1,79 @@
 ---
 name: idiomatic-rust
-description: Concise, idiomatic, readable Rust, each rule as an instruction with its reason. Use when writing new Rust, refactoring existing Rust, reviewing a diff that touches .rs or Cargo.toml files, or when another skill needs the Rust idiom baseline.
+description: Contextual Rust idioms and invariant design. Use when writing Rust, refactoring existing Rust, reviewing a diff that touches .rs or Cargo.toml files, or when another skill needs the Rust idiom baseline.
 ---
 
 # Idiomatic Rust
 
-This file holds the Rust rules that a linter cannot enforce. Each rule is an instruction with its reason. To build, read the section for the work in hand, in the order the sections appear. To review, compare each changed function against every rule and name the rule on each finding. A documented standard in the repository overrides this file. The rules assume a library, a service, or an engine. A rule that names a narrower case, such as the hot path, applies only in that case. The check command in [LINTS.md](LINTS.md) enforces the mechanical rules, so this file does not repeat them.
+Use the sections relevant to the change. These patterns apply to libraries, CLI tools, inference servers, and stateful services without prescribing one architecture. A documented repository standard overrides this file's conventions, but cannot make an invalid construction or unsafe operation correct.
+
+Distinguish three kinds of guidance in implementation and review:
+
+- **Correctness requirements:** preserve the promised invariants and supported behavior across every entry path and operation. Prove a violation with an input or execution, not a style preference.
+- **Contextual defaults:** choose ownership, dispatch, errors, and dependencies from the callers, supported Rust version, and measured requirements. Explain departures where the reason is not clear from the code.
+- **Optional readability conventions:** names, local aliases, derive grouping, comment shape, and module layout. Respect house-rule exemptions. Do not report a convention as a bug or demand a migration to satisfy it.
 
 ## Shape
 
-Decide the types before you write a function body.
-
-- **The compiler is the guardrail.** Give each kind of value its own type: `Width`, `Height`, `UserId`, `DocumentId`. Do not use a bare `u64`, `f64`, `String`, or `bool` for a domain value. A function that takes two parameters of the same primitive type is a defect. The caller can swap the arguments, and the compiler accepts the call. Write `fn resize(width: Width, height: Height)`, so `resize(height, width)` does not compile. When two parameters have the same type and different roles, put them in a struct with named fields: `Move { from: FolderId, to: FolderId }`. Put a unit in the type where a unit exists: `Millis(u64)`, `std::time::Duration`.
-
-- **Name the absence.** Use `Option<T>` only when `None` means "not there" and nothing more. Examples: a map lookup, the first element of a slice, an optional config field. When the absence has a domain meaning, define an enum that names it: `Uninitialized` or `Initialized(T)`, `Unpinned` or `Pinned(Index)`. Write `enum Cached<T> { Fresh(T), Stale { last: T, age: Duration }, Empty }` where `Option<T>` would hide three cases behind one `None`. A reader then sees why the value can be missing, and a `match` names every case. Do not use `Option<T>` where a comment would be needed to say what `None` means. Convert from `Option` with a `From<Option<T>>` impl at the boundary where a database or a wire format only knows null.
-
-- **Make invalid states impossible.** Model "one of several" as an enum. Model "can fail" as `Result`. Do not pass a `bool` argument. Use a two-variant enum such as `Visibility::Public` and `Visibility::Private`. Do not use a sentinel value such as `-1` or an empty string. Merge two fields into one enum with data when one is valid only while the other has a given value. Model a state machine as an enum, not as a set of flags. When a method is valid only in one phase of a value's life, put the phase in a type parameter. `Connection<Handshaking>` offers `complete()`, and `Connection<Ready>` offers `send()`. Model a closed set of strings as an enum. Derive `EnumString` and `Display` from `strum` for the conversion at the boundary (see [CRATES.md](CRATES.md)). A `String` stays a string only for free text: a name, a message, a path from a user.
-
-- **Parse at the boundary.** Convert raw input into domain types at the edge of the system, once, in one place. Raw input is bytes, JSON, a query string, or a config file. Make the constructor of a validated newtype the only way to create a value, and keep the field private. Every value inside the core is then valid, and the core never checks it again. Do not pass a raw `u64` or `String` into the core. Give a type that is read or written as raw bytes `#[repr(C)]` or `#[repr(transparent)]`. Name every padding byte with a field. Keep pointers, `String`, `Vec`, and `Box` out of it. Decode through a checked conversion that rejects invalid bytes, so an invalid frame never becomes a value. A type that crosses a JSON or a protobuf boundary uses serde or prost and keeps its `String` and `Vec` fields.
-
-- **Newtype anatomy.** Keep the inner field private. Write `const fn new`. When the value has a bound, return `Option<Self>` from `new`, with `(v <= MAX).then_some(Self(v))`. At a config or a request boundary, return `Result<Self, E>` instead, with the rejected value in `E`. The report then names the value. Add a `const fn new_const` that panics only when the code needs a literal of the type, such as a protocol constant. Implement `From<Newtype> for Inner` always. Implement `From<Inner> for Newtype` only when every inner value is valid. Otherwise `new` is the only way in. Derive `Display` and `FromStr` so they delegate to the inner type (see [CRATES.md](CRATES.md)). Put sentinel values in associated consts: `JobId::MAX`, `Retries::ZERO`. Add `#[repr(transparent)]` when the layout matters, with a comment that says why. Write one `#[derive(...)]` line per ecosystem with a trailing comment that names the ecosystem. The comment shows a reader which surfaces the type crosses, and it stops rustfmt from merging the lines.
-
-  ```rust
-  /// A system-generated job identifier.
-  #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)] // std
-  #[derive(Serialize, Deserialize)] // serde
-  #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)] // zerocopy
-  #[repr(transparent)] // wire layout is the inner u64
-  pub struct JobId(u64);
-  ```
-
-- **Derive, or explain.** Derive `Copy`, `Clone`, `PartialEq`, `Eq`, `Hash`, and `Default` where they are valid. Put trait bounds on impl blocks, not on the type definition. Write an impl by hand only when the derive would be wrong. Put the reason in a comment above it: `// do NOT derive Hash: the default hashes byte by byte and is slow`.
-
-- **Private by default.** Keep fields private. Use `pub(crate)` for an item that other modules in the crate use. Use `pub` only for an item that other crates use. Give a type `new()` and derive `Default` when a no-argument value makes sense. Mark a `pub` enum or struct that another crate matches on, and that will grow, `#[non_exhaustive]`. A new variant is then not a breaking change. Do not add a builder to a domain type. Add a builder only to a config struct with many optional fields, and use a compile-time checked builder (see [CRATES.md](CRATES.md)).
-
-- **Small traits.** Give a trait one capability, and build a ladder: `HasClock`, then `HasStore: HasClock`. A caller then asks for the weakest bound it needs. Name a bound bundle with a marker trait and a blanket impl: `pub trait Message: Send + Sync + 'static {}` plus `impl<T: Send + Sync + 'static> Message for T {}`. Add a method to a foreign type with an extension trait named `<Type>Ext`. Use generics. Use `dyn Trait` for a heterogeneous collection, or for a pluggable backend (see [RUNTIME.md](RUNTIME.md)). Implement `Deref` only on a smart pointer or an owning collection. Do not use `Deref` to reach the methods of a field. Write forwarding methods instead.
+- **Types earn their place.** Introduce a newtype when it protects an invariant, distinguishes confusable roles, or carries useful behavior. `Width` and `Height` can prevent swapped arguments; `Duration` supplies units and operations. Two primitive parameters alone are not a defect: `(title: &str, body: &str)` and simple counters can stay simple. Named fields can distinguish two roles of the same type.
+- **Name meaningful states.** Use enums for mutually exclusive states or several kinds of absence. Keep `Option<T>` for ordinary optional values, and a boolean where its meaning is clear. Module privacy and narrow methods often suffice. Add typestate, branded lifetimes, version tokens, or restrictions on `Copy` only when a concrete misuse needs preventing.
+- **Audit the guarantee.** Before claiming that a type is always valid, check constructors, `From`/`TryFrom`, `FromStr`, deserializers, database reads, `Default`, mutation, and arithmetic. Private fields protect callers outside the module, not other construction within it. Validate whole aggregates when the rule relates several values. A setter or `&mut` accessor must not bypass that rule.
+- **Parse structure, then validate meaning.** Raw bytes or decoded data need checked conversion before acquiring a semantic guarantee. An intrinsic bound remains true until an operation changes the value. Admission under policy belongs to the authority that knows that policy; historical authorization does not prove validity against later mutable state. Preserve admitted work when compatibility requires it. Read [INVARIANTS.md](INVARIANTS.md) for these boundaries, operations, transition results, and persistence changes.
+- **Checked newtypes.** Keep constrained fields private and route every inbound conversion through validation. Use `const fn` when callers need constants and the supported toolchain permits it. For a bound, use `if value <= MAX { Some(Self(value)) } else { None }`, which works in a `const fn`; `then_some` is not const-compatible on the evaluation toolchain. Use `Result<Self, E>` when callers need a diagnostic, including the rejected value where useful. Infallible inbound `From`, delegating `FromStr`, and unchecked `Deserialize` derives belong only on unconstrained wrappers. A validated wrapper's `FromStr` parses and calls `TryFrom`; Serde can use `#[serde(try_from = "RawType")]`. Outbound access or `From<Wrapper> for Inner` can expose the value without permitting mutation.
+- **Layout is a separate contract.** Use `repr(C)` or `repr(transparent)` only when an ABI or raw-byte representation requires it. Neither validates bytes nor specifies byte order or a portable serialization format. Ordinary JSON/protobuf models can keep `String` and `Vec`. Audit padding, alignment, byte validity, and ownership separately for raw-byte access.
+- **Derive valid behavior.** Derive standard traits when their implementations preserve the contract, including `Default`. Keep `Copy` for simple values unless copying violates a concrete ownership rule. Use `pub(crate)` for crate callers and `pub` for external callers. Consider `#[non_exhaustive]` before publishing an extensible type. A builder is useful when construction is complex; its final build must validate relationships too.
+- **Small traits, chosen dispatch.** Ask for the capabilities a caller needs. Generics suit static specialization; `dyn Trait` suits heterogeneous collections and pluggable backends. Neither is mandatory for all systems. A forwarding method is usually clearer than `Deref` for a field that is not a smart pointer or collection.
 
 ## Errors
 
-Decide the error types with the domain types.
-
-- **Rejection is an outcome. Failure is an error.** A domain method returns `Result<XOutcome, XError>`. `XOutcome` is an enum with a `Rejected(Reason)` variant for every expected "no": an unknown id, a full queue, a closed session. `Err` means an invariant is broken or a dependency failed. Do not put an expected rejection in the error enum. Do not log a rejection with `warn!`. A rejection is a response to the caller. Mark every outcome enum `#[must_use]` with a reason, so a caller cannot drop a `Rejected` silently. Skip the attribute on a private outcome with one caller: the one `match` already handles every case. In a thin adapter or a script, where the caller only reports the rejection, return a plain `Result<T, E>`.
-
-  ```rust
-  #[must_use = "a rejection must reach the caller"]
-  pub enum CancelOutcome { Cancelled { attempts: Retries }, Rejected(RejectReason) }
-
-  pub fn cancel(&mut self, id: JobId) -> Result<CancelOutcome, SchedulerError> {
-      let Some(job) = self.jobs.get_mut(&id) else {
-          return Ok(CancelOutcome::Rejected(RejectReason::UnknownJob));
-      };
-  ```
-
-- **Library errors use `thiserror`.** In a library crate, derive the error type with `#[derive(thiserror::Error, Debug)]`. Define one error enum per fallible surface. In a large crate, that is an operation or a module. In a small crate, it is the whole crate. A caller can then match on exactly the failures of the operation it called. Give each variant the data a caller needs to act on it. Examples: the id, the path, the offset, the expected and actual values. Do not format a message into a `String` field. Write the message with `#[error("...")]` and name the fields in it. Write the message in lowercase with no trailing period, as std does. A chained report then reads as one sentence per cause. Define a single-variant error as a struct, not as a one-variant enum. Derive `Copy` on an error that lives on a hot path, and keep `String` and `Box` out of it. An error at the edge or in a tool can carry a `String` path or a boxed cause.
-
-- **Compose errors with `#[from]`, `#[source]`, and `transparent`.** Use `#[from]` on a variant when the inner error converts into this variant and nothing else. The `?` operator then converts it. One inner type can carry `#[from]` on only one variant of an enum. Use `#[source]` when the variant adds its own fields, or when the same inner type feeds two variants. `#[source]` keeps the cause chain and generates no `From`. Use `#[error(transparent)]` on a variant that only wraps another error. The wrapped message and cause chain then show through. Below, `JobNotFound` is a `Copy` struct error with its own `#[error]` message.
+- **Model the caller's decision.** An outcome enum can separate expected admission or rejection from infrastructure failure when callers act on those distinctions. A plain `Result<T, E>` is often clearer for parsing, libraries, thin adapters, and scripts. Use `#[must_use = "reason"]` when silently dropping a standalone outcome loses a required action; a private outcome exhaustively handled by its one caller may not need it.
+- **Keep actionable error data.** Use typed errors when callers match failures. Include useful ids, offsets, paths, or bounds and preserve cause chains. `thiserror` is a convenient default, not a required ecosystem. Handwritten `Error` implementations and existing alternatives are valid. An application or test can use `anyhow`, another report type, or `Box<dyn Error>` when it only reports failures. Avoid allocating on measured hot failure paths without a reason.
+- **Compose without losing meaning.** With `thiserror`, `#[from]` generates conversion and a source; `#[source]` retains a cause when the outer error adds context; `transparent` forwards a wrapped report. Use equivalent capabilities in the project's error library. Translate explicitly where a layer promises a narrower error surface. Preserve the distinction between rejecting input and silently discarding valid work.
+- **A local Result alias is optional.** When a module consistently returns its own error, an alias can shorten signatures. Qualify the definition to avoid recursion, and match its visibility to callers. Keep explicit results for generic errors, multiple error types, or import collisions. This convention does not require one global crate error or force tests to share a production error type.
 
   ```rust
-  #[derive(Debug, Error, Copy, Clone, PartialEq, Eq)]
-  pub enum SchedulerError {
-      #[error(transparent)]
-      JobNotFound(#[from] JobNotFound),
-      #[error("worker {0:?} is offline")]
-      WorkerOffline(WorkerId),
+  #[derive(Debug)]
+  pub enum DecodeError {
+      InvalidHeader,
+      TruncatedInput,
   }
+
+  pub type Result<T> = std::result::Result<T, DecodeError>;
   ```
 
-- **Translate errors at a layer boundary.** Write an exhaustive `From<InnerError> for OuterError` impl at each boundary. Name every variant. Do not write a `_` arm. A new inner variant then fails the build until the translation handles it.
+  Use `core::result::Result` in a suitable `no_std` module. The example's `pub` is not mandatory.
 
-- **Application errors use `anyhow`.** In a binary crate and in tests, return `anyhow::Result<T>`. In a library crate, `anyhow` is a dev-dependency. Add context at each layer where the lower message is not enough on its own: `.context("load the service config")?` or `.with_context(|| format!("read {path}"))?`. Do not return `anyhow::Error` from a library function. Do not use `Box<dyn Error>`, `String`, or `()` as an error type in any signature. Do not mix the two conventions in one crate's public interface.
-
-- **Propagate every error.** Use `?` everywhere a caller can act on the error. Do not write `let _ = fallible();` without a comment that says why the result does not matter. Do not convert an error to a log line and continue. The exception is an operation that is best-effort by design, with a comment that says so.
+- **Handle failures deliberately.** Propagate with `?` when callers can act. A best-effort operation may log and continue or explicitly discard its result, with the reason stated locally. Add context where the lower-level report cannot explain the failed operation.
 
 ## Ownership
 
-Decide the signatures.
-
-- **Take what you use.** Take `&str`, `&[T]`, `&Path`, and `&T`. Take an owned value only when the function stores it or consumes it. Take `self` by value in a method on a `Copy` newtype.
-
-- **Return by need.** Return `&str` or `&[T]` for a view of a field. Return `impl Iterator<Item = T>` when the caller consumes a sequence once, and `Vec<T>` when the caller keeps the collection. Do not box the iterator by default. Box it when the body returns one of several iterator types, or when a trait object stores it. Return `Cow<'_, str>` when a function returns its input unchanged in most calls and builds a new value in the rest.
-
-- **Clone only for a second owner.** Do not add `.clone()` to make a borrow error go away. When the borrow checker rejects the code, use one of four moves. Shrink the borrow with an inner block. Move the value out with `mem::take` or `Option::take`. Split the struct so the fields borrow independently. Borrow in the signature. Write `Arc::clone(&x)` when you increment a reference count. Do not write `x.clone()` on an `Arc`.
-
-- **Elide lifetimes.** Do not write a lifetime the compiler can infer. Name a lifetime only when the output borrows from one of several inputs, or when a struct stores a reference. Own data at a public boundary: use `Vec<u8>`, not `&'a [u8]`, in a public struct. Do not use `'static`, `Arc`, or `Rc` to escape a lifetime error.
-
-- **Share by message.** Send data between tasks through a channel, or share it through an atomic or a lock-free structure (see [RUNTIME.md](RUNTIME.md)). Do not reach for `Arc<Mutex<T>>` first. When a lock is necessary, hold it for a few lines. Do not return a guard from a method.
-
-- **Time and randomness are inputs.** A state transition takes `now: Timestamp` as a parameter, and an `&mut impl Rng` when it needs randomness. Do not call `Instant::now()`, `SystemTime::now()`, or `thread_rng()` inside a state transition. The same inputs then replay the same state, and a test passes a constant. Read the clock and seed the generator at the edge, once per event. Use `Instant` for a duration. Use `SystemTime` only where a wall-clock time is recorded.
-
-- **Rebind, then move.** Rebind a captured variable in a block around a `move` closure, and keep the outer name inside the closure. Do not write `let n2_cloned = n2.clone()`. Freeze prepared data with a rebinding. After the rebinding, the compiler rejects a later mutation.
-
-  ```rust
-  let on_tick = {
-      let counter = Arc::clone(&counter);
-      move || counter.fetch_add(1, Ordering::Relaxed)
-  };
-  let jobs = { let mut jobs = fetch_jobs(); jobs.sort_unstable(); jobs };
-  ```
+- **Take and return what callers need.** Borrow `str`, slices, paths, and values unless storing or consuming them. A borrowed public view is valid; ownership is useful when independence from the source lifetime matters. Return an iterator for one-pass consumption or a collection when callers need storage. Use `Cow` when avoiding a common copy helps.
+- **Clone for an owner.** First consider a shorter borrow, disjoint fields, `Option::take`, or `mem::take`. A clone is legitimate when a second owner needs the value. Prefer `Arc::clone(&value)` when making reference-counted sharing visible helps. Do not add `Arc` or `'static` just to obscure a lifetime problem.
+- **Share according to the workload.** Start with exclusive ownership or partitioned state. Channels, snapshots, atomics, and locks solve different requirements. Read [RUNTIME.md](RUNTIME.md) for the strong hot-path lock preference and its narrow correctness exception. A channel or concurrent collection is not necessarily lock-free.
+- **Make nondeterminism testable.** Pass time and randomness into replayable transitions. A small CLI need not grow a clock trait to read the current time. Use monotonic time for elapsed durations and wall-clock time for recorded timestamps.
 
 ## Flow
 
-Write the function body.
+- **Make decisions visible.** Use `?`, guards, `let ... else`, combinators, or `match` according to which makes the cases clearest. Let chains require a compatible edition and Rust version. Use exhaustive matches where a new local enum variant needs a new policy decision. Put shared interpretation on the owning status type so consumers cannot drift.
+- **Choose arithmetic semantics.** Use checked operations for possible overflow and reflect failure in the return type. Nonzero signed values still include the minimum value, whose negation overflows. Saturation and wrapping are domain choices, not interchangeable fixes. A stricter representation must preserve valid behavior and supported exceptions; do not silently round, drop, or reinterpret input to fit it.
+- **Use the transition's result.** Have an authoritative mutation return the removed resources and resulting state needed by callers. A second lookup into mutable state can observe a later state or lose information. See [INVARIANTS.md](INVARIANTS.md) for an independent example and alternatives.
+- **Keep iteration clear.** Iterator chains suit transformations and fallible collection; loops suit side effects or complex state. Use standard methods when they express the operation directly. Name constants when the name explains a unit or policy, rather than wrapping every literal.
+- **A panic needs a contract.** Return errors for invalid external input. At a provably infallible site, an `expect` message should state the invariant. Tests can panic on failed expectations. Follow the project's lint exceptions without replacing a justified assertion with a fictional error path.
 
-- **Transform, do not match.** Use `?`, `if let`, `while let`, `let ... else`, `map`, `map_err`, `ok_or_else`, `and_then`, `is_some_and`, `then_some`, and `matches!` on `Option` and `Result`. Write a `match` only when more than one arm binds a value. Chain bindings and conditions with `&&`: `if let Some(job) = slot && job.is_ready() && let Some(worker) = free_worker()` (edition 2024, Rust 1.88). One chain replaces a stack of nested `if let` blocks. Write `let Ok(x) = res else { return Ok(Outcome::Rejected(reason)) };` when the domain has already answered the error.
+## Surface and words
 
-- **Guards first, happy path flat.** Put every guard clause at the top of the function. Write the reason in a one-line comment above each guard. Write one `let ... else` per binding that exits. Write a let chain for a guard that is a condition, not an exit. Keep the happy path at the lowest indentation. Build a value that has several exit points in a labeled block. Name the label for the thing you escape.
-
-  ```rust
-  let removed = 'queue: {
-      let Some(worker) = self.workers.get_mut(&worker_id) else { break 'queue false };
-      let Some(queue) = worker.queues.get_mut(&priority) else { break 'queue false };
-      queue.remove(&job_id).is_some()
-  };
-  ```
-
-- **Match exhaustively.** Name every variant of a local enum in a `match`. Do not write a `_` arm. A new variant then fails the build. Group arms with the same body with `|`. Write the invariant in the message of `unreachable!` and `debug_assert!`: `debug_assert!(!queue.is_empty(), "the map holds no empty queue")`.
-
-- **Chain to build, loop to consume.** Build a new collection with an iterator chain and `collect()`. Use `for x in &v` when the loop body has side effects. Use `filter_map` and `find_map` where one closure can filter and map. Collect a fallible map with `collect::<Result<Vec<_>, E>>()?`. Do not `unwrap` inside the closure. Use std methods first. Use itertools for `tuple_windows`, `chunk_by`, `kmerge`, and `exactly_one` (see [CRATES.md](CRATES.md)).
-
-- **A panic is a decision.** Use `unwrap`, `expect`, and indexing only in tests, in `main`, and at a site that cannot fail. At such a site, write `expect` with the invariant as the message. For an index, put the invariant in a comment within two lines. `unwrap` does not pass the check, so write the `expect`. Do not write `unreachable!`, a new error variant, or a `?` that cannot fail instead. Do not use `panic!` to handle an error. When you call `drop(x)` before the end of the scope, write a comment that says why.
-
-- **Name every number.** Give a literal other than `0`, `1`, and `2` a name. Use a `const`, or an associated const on the type that owns the value: `Backoff::INITIAL`, `JobId::MAX`.
-
-- **Check arithmetic on external values.** Use `checked_add`, `checked_mul`, and `saturating_sub` on values that come from the wire or from a client. Map an overflow to an error or a rejection. Use a plain operator only when a comment states the bound that makes it safe.
-
-## Surface
-
-Name the items and shape the public interface.
-
-- **Imports at the top.** Import every non-std path at the top of the file. Do not write `use` inside a function. Do not write a qualified path such as `crate::clock::Timestamp` at a call site or in a signature. When two names collide, alias one: `use parking_lot::Mutex as SyncMutex;`. Macro paths and attribute paths are the exception.
-
-- **Names follow the std conventions.** Name a conversion by cost and ownership: `as_` is free and borrowed, `to_` is expensive, `into_` consumes `self`. Name a getter after the field, without `get_`. Name a function for the decision it makes: `evict_stale_then_insert`. Use these suffixes with these meanings. `Outcome`: a domain result. `Kind`: a closed discriminant. `Reason`: why a request was rejected. `Config`: a configuration struct. `Handle`: a cloneable owner of a worker. `Ext`: an extension trait. `Has*`: a capability trait. Name a generic parameter with the initial of its concept (`W` for worker). Name a label for the thing it escapes (`'queue`). Name a closure parameter with the domain noun. Shadow a variable through a transformation: `let job = parse(job)?;`. Do not write `raw_job` and `parsed_job`. Use one name for one concept in a diff, and use the name the crate already uses.
-
-- **`lib.rs` is a module list.** Write `lib.rs` as an alphabetized list of `pub mod`, `pub(crate) mod`, and `mod` lines. Put `#[cfg(test)]` and feature gates on the `mod` line. Use `pub use` only to export an item from a private module.
-
-- **Attributes say why.** Write `#[must_use = "reason"]`. Do not write a bare `#[must_use]`. Write `#[expect(lint, reason = "...")]` on the one item that needs it. Do not write `#[allow]` at crate scope. Do not write `#![deny(warnings)]` in source. In the `// SAFETY:` comment above an `unsafe` block, name the obligation and say why it holds.
-
-- **Bundle the arguments.** Keep a function at five positional parameters or fewer. Put more parameters in a request struct with named fields. Do not write `#[allow(clippy::too_many_arguments)]`. Give a complex closure type a trait.
-
-## Words
-
-Write the comments, the docs, the tests, and the logs.
-
-- **Write in Simplified Technical English.** Write comments, doc comments, error messages, and log messages in ASD-STE100 style. Write one instruction or one fact per sentence. Keep an instruction at 20 words or fewer, and a description at 25 words or fewer. Use the active voice and the present tense. Use one word for one concept. Use the name the codebase uses: the type name, the function name, or the glossary entry. A glossary is `CONTEXT.md` or `GLOSSARY.md`, when one exists. Do not use a figure of speech, a synonym for variety, or a pronoun without a clear noun.
-
-- **Comments say why.** Write a comment only when the code cannot show the reason, and write the reason in one line. Do not restate what the code does. Do not describe a past implementation. Do not write "we" or "this function". Keep a comment or a `TODO` that you did not write. Remove it only when the code it explains is gone or its work is done.
-
-- **Docs state the rule and the consequence.** Start a doc comment with a one-line summary. Then state the invariant and what breaks when the invariant is violated: "Chosen once and fixed forever. A change to this seed changes every derived id and breaks replay." Do not restate the parameter types. Do not put design discussion in a doc comment. Link every item you mention with an intra-doc link: `` [`JobId`] ``. Write a module doc (`//!`) as an operating procedure, in a numbered list. Say how to add a variant, what may change and what must not, and what depends on the module. Write a variant doc that says when the variant occurs.
-
-- **Tests read as sentences and show their arithmetic.** Put unit tests in a `#[cfg(test)] mod tests` block in the same file. Start every test name with `test_`, then the behavior it checks: `test_backoff_doubles_after_each_failure`. The prefix marks a test in a grep, a panic message, and a profile, where the `#[test]` attribute is not visible. Drop the prefix only in a crate that enables `clippy::redundant_test_prefix`. Return `anyhow::Result<()>` from the test so the body can use `?` on any error (see Errors). Derive the expected value in a comment above the assertion. Write `assert!(next > prev, "next ({next:?}) is above prev ({prev:?})")` with the values in the message. Use a named constant for time. Do not call `now()` in a test. Name a property test `test_prop_<behavior>`. Write one named case per input (see [CRATES.md](CRATES.md)). Add a test in the same crate for every new `pub fn`.
-
-- **Logs are structured.** Pass values as key-value arguments. Do not format the message before the macro call. Do not log a rejection with `warn!`. Emit `info!` per lifecycle event. Do not emit `info!` per request or per message.
+- **Optimize for readers.** Use conventional conversion names (`as_`, `to_`, `into_`) and one term per concept. Group arguments when named fields clarify roles. Keep imports and module boundaries easy to navigate; a tiny library can live in `lib.rs`. Derive grouping, test prefixes, and short comments are readability preferences, not independent correctness guarantees.
+- **Explain obligations.** Comments should explain reasons the code cannot show. Public docs should state guarantees, failures, and compatibility constraints. A `// SAFETY:` comment must establish the actual obligation of an unsafe operation. Keep repository conventions and supported lint syntax, including house-rule exemptions such as `clippy::redundant_test_prefix`.
+- **Test behavior.** Exercise invalid construction routes, arithmetic limits, state changes, and historical data. Integration tests can protect public guarantees without matching an implementation. A test may return `()`, a local alias, or another suitable error type. Keep straightforward valid code unchanged when extra wrappers, aliases, dependencies, or typestate provide no benefit.
+- **Use the output channel the product needs.** Structured logs suit services. CLI stdout is legitimate product output; apply its documented lint exception in both scoring passes. Choose log severity and per-request volume from operational requirements.
 
 ## Check
 
-Before you hand Rust back, run the check command from [LINTS.md](LINTS.md) on each crate the diff touches. Then run `cargo +nightly fmt` on those crates. Fix each finding in a file the diff touches, or put `#[expect(lint, reason = "...")]` on the one item. A crate that never ran the check has a backlog in its other files. Report the count of that backlog and leave it.
+Run the relevant tests and the commands in [LINTS.md](LINTS.md) on touched crates, respecting the project's supported toolchain, feature combinations, and documented exceptions. Format with the project's formatter; use nightly only when its configuration requires it. Fix findings introduced by the change and report unrelated backlog. A failed or incomplete compiler invocation is not a clean check. In review, separate demonstrated correctness problems, contextual tradeoffs, and optional conventions.
 
 ## Pointers
 
-- **The diff has async code, tasks, or threads.** Read [RUNTIME.md](RUNTIME.md).
-- **You are about to write an impl by hand that a crate would derive.** Read [CRATES.md](CRATES.md).
-- **You need the check command or the lint policy.** Read [LINTS.md](LINTS.md).
+- **Validation, admission, arithmetic, transition results, or persisted representations change:** read [INVARIANTS.md](INVARIANTS.md).
+- **Async code, tasks, threads, or shared state change:** read [RUNTIME.md](RUNTIME.md).
+- **Choosing a dependency or derive:** read [CRATES.md](CRATES.md).
+- **Running checks or deciding lint exceptions:** read [LINTS.md](LINTS.md).
