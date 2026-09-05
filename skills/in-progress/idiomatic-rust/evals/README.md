@@ -85,13 +85,28 @@ Keep four questions apart, because a run can win one and lose another. Did the e
 - **Left for the owner.** Whether a renewal counter deserves a newtype. The two free-text `String` parameters question is answered in the revision: they stay `String` inside a struct with named fields.
 - **Fork issue #6 item 5 (trim each entry to three or four sentences) was not applied as written.** The sentences that produced the differences above are spread through the long entries, and a blanket cap would remove them with the no-ops. The trim applied is the evidence-backed cut listed above.
 
+### 2026-09-05, `claude-opus-5`, the trimmed skill against the revision it trims, one run per arm
+
+The trim (`01de312`) rewrote every guidance file for length without dropping a rule: the same headings, the same Rust blocks, each instruction inventoried before and mapped back after. `s3-extend` and `s6-decoder` were run once each in the `skill@37cf5b3` arm (the skill before the trim) and the `skill` arm (after), on the same model, with no `bare` arm.
+
+| scenario | arm | runs | own tests | external | check lib | check all | check ran | mean wall s | mean cost $ | skill revision |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| s3-extend | skill | 1 | 1/1 | 1/1 | 1/1 | 1/1 | 1/1 | 211 | 1.35 | 01de3125df2b |
+| s3-extend | skill@37cf5b3 | 1 | 1/1 | 1/1 | 1/1 | 1/1 | 1/1 | 192 | 1.26 | 37cf5b3796b0 |
+| s6-decoder | skill | 1 | 1/1 | 1/1 | 1/1 | 1/1 | 1/1 | 406 | 2.10 | 01de3125df2b |
+| s6-decoder | skill@37cf5b3 | 1 | 1/1 | 0/1 | 1/1 | 1/1 | 1/1 | 644 | 3.25 | 37cf5b3796b0 |
+
+- **`s3-extend`: the same on every rubric row.** Both arms wrote `RenewOutcome` with a `Rejected(reason)` variant and `#[must_use]` with a reason, three guards with a reason comment each and `let ... else` on the lookup, `renew(&mut self, id, now)`, the count compared before the increment with a comment on the bound, one `test_renew_*` per case with the expected expiry derived in a comment, the module doc's numbered list extended, and zero findings in both check passes. Both left `max_renewals` a `u32` (row 3 allows either). The trimmed arm put the values in every assertion message and added a getter for the renewal count; the untrimmed arm carried the renewals left in the outcome instead.
+- **`s6-decoder`: the same closures, one overreach.** Both arms routed `Priority`, `PayloadLen`, and `Delta` through `#[serde(try_from = "..")]` and `TryFrom`, parsed bytes and JSON into a `RawHeader` checked once in `TryFrom<RawHeader> for Header`, added `checked_invert` over `checked_neg` and `magnitude` over `unsigned_abs`, composed the capture error with `#[from]` and `#[source]`, and passed both check passes with no new dependency. The untrimmed arm also split the crate into four modules and made the `Frame` fields private behind getters, so the external tests, which read `frame.header` and `frame.payload` as the prompt pins them, did not compile against it. The trimmed arm kept the fields public and said so in the module doc.
+- **Reading.** One run per arm, so a design choice in either run may not repeat. On these two scenarios the trim cost nothing on the rows the earlier run showed the skill earning its load, and the one external-test failure sits in the untrimmed arm. The three-arm matrix with `bare` is still the evidence promotion needs.
+
 ### Harness and fixture changes since that run (2026-09-05)
 
 Results moved from `results/<scenario>/<arm>/` to `results/<scenario>/<arm>/r<N>/`, and `score.sh` gained the external tests, the diff stats, and the `INCOMPLETE` verdict. Two fixtures changed. `s1-ratelimit`'s empty `lib.rs` gained a newline, so `rustfmt --check` passes on it. `s3-extend`'s tests carried two findings of the check command (`duration_suboptimal_units` and `unchecked_time_subtraction`) that the answer key never planted. They are fixed, so a run's findings there are now the agent's. The 2026-09-04 numbers for `s3` include those two findings in the bare arm. `s4-async` gained a `check-flags` file, so the `print_stdout` relaxation its rubric names is applied in both passes.
 
 ### Not yet run: the revision in this tree
 
-The revision (`INVARIANTS.md`, the corrected constructors and derives, the contextual hot-path and crate guidance, `s6` to `s9`) has not been run against a model. `check.sh` passes on it: the examples compile and pass the check, every snippet matches its module, and each new scenario's external tests fail on `start/` and pass on `reference/`. What promotion still needs, in the order to run it:
+The revision (`INVARIANTS.md`, the corrected constructors and derives, the contextual hot-path and crate guidance, `s6` to `s9`) has one run per skill arm on `s3` and `s6` (above) and no `bare` arm yet. `check.sh` passes on it: the examples compile and pass the check, every snippet matches its module, and each new scenario's external tests fail on `start/` and pass on `reference/`. What promotion still needs, in the order to run it:
 
 1. `s6` to `s9` in three arms (`bare`, `skill@9fe7b17`, `skill`), at least three runs each, on one model. `analyze.py matrix` prints the result table; paste it here with the model and the date.
 2. The same three arms on `s1` to `s5`, so the earlier one-run numbers get repetitions.
