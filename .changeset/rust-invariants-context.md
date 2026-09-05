@@ -2,4 +2,4 @@
 "mattpocock-skills": patch
 ---
 
-Revise the experimental `idiomatic-rust` skill around checked invariants, preserved domain behavior, and contextual Rust choices. Add generic executable examples, optional module-local Result aliases, and evaluation cases for decoder bypass, signed limits, changing admission policy, authoritative results, and historical data. Preserve the earlier evaluation evidence and keep promotion gated on repeated comparisons and a real-ticket probe.
+Correct the experimental `idiomatic-rust` skill's construction, dispatch, Send, and hot-path locking guidance while preserving its six sections and writing conventions. Add generic invariant examples and optional module-local Result aliases. Fix incomplete compiler-run scoring and apply the documented CLI stdout exception in both passes. Keep the evaluation expansion and real-ticket probe for a separate follow-up before promotion.

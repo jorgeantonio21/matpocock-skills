@@ -1,76 +1,59 @@
 # idiomatic-rust evaluation
 
-Compare no guidance (`bare`), the merged issue-7 skill (`merged`), and the revised skill (`skill`). Use repeated runs on the same resolved model and Rust toolchain. Independent correctness, maintainability, review false positives, generality, cost, and rule adherence are separate dimensions; [RUBRIC.md](RUBRIC.md) defines the evidence for each.
+Five scenarios, each run twice on the same model and toolchain. One run has the `idiomatic-rust` skill loaded (arm `skill`), and one has no Rust guidance at all (arm `bare`). The point is a human comparison: read the two results side by side and decide whether the skill changed the code in ways that matter. The mechanical checks in `score.sh` keep the reading honest. They do not replace it.
 
-The skill remains **in progress**. Neither the original fixture threshold nor the real-ticket promotion gate has been met. Preserve the historical results below; new mechanical checks are not proof that loading the revised skill improves a model's output.
+## The arms
 
-## Inputs and arms
+Both arms run headless (`claude -p`) with `--safe-mode`, which turns off every customisation: the user and project `CLAUDE.md`, every installed skill, memory, hooks, and plugins. Auth and the model are unchanged.
 
-Each scenario has an identical `prompt.md` and `start/` tree for all arms. Rust 1.97.1 is pinned in the starting crates. The new scenarios also carry checked-in Cargo lockfiles. `run.sh` uses headless Claude Code with `--safe-mode` to disable installed customizations. It currently uses `--dangerously-skip-permissions` in the throwaway workspace, so running a paid campaign needs authorization for both its aggregate budget and that execution mode.
+- **bare**: exactly that. The model, the prompt, the starting crate, and the Rust toolchain.
+- **skill**: the same, plus `SKILL.md` appended to the system prompt the way the Skill tool would inject it. The injection names the skill's base directory, so `RUNTIME.md`, `CRATES.md`, and `LINTS.md` are one `Read` away. One line at the end of the prompt says to follow the skill, including the Check step.
 
-- **bare:** prompt, starting code, and toolchain only.
-- **merged:** additionally inject `SKILL.md` and expose its companion references from commit `9fe7b179dd3a8652d1c0fb4d9935011f39d953af`.
-- **skill:** additionally inject the revised `SKILL.md` and expose its companion references, including `INVARIANTS.md`.
+The model is whatever `claude -p` resolves by default (`claude-opus-5` on 2026-09-04); pass a third argument to `run.sh` to override. Each starting crate pins Rust 1.97.1 through `rust-toolchain.toml`, so the agent's `cargo` and the scorer's `cargo` agree.
 
-Both skill arms receive the same instruction to follow the loaded skill and its Check step. `compare.sh` snapshots the revision and evaluator lint policy for the campaign. Every run records hashes of the starting files, effective prompt, skill files, and external oracle. Runtime/toolchain versions are recorded separately. If resolved models or input hashes differ unexpectedly, report an invalid comparison rather than averaging it into a result.
+## The scenarios
 
-## Scenarios
+| Scenario | Mode | What it exercises | Reading cost |
+| --- | --- | --- | --- |
+| `s1-ratelimit` | Write a library from a requirements list | Shape, Errors (rejection as an outcome), time as an input, tests | two crates of ~200 lines |
+| `s2-refactor` | "Make this crate idiomatic" on a crate with 13 planted drift patterns | Every section; an answer key names the expected rewrite per pattern | two diffs against one start |
+| `s3-extend` | Add one feature to a small, decent crate | Errors (outcome vs error), Flow (guards, exhaustive match), Words (tests, docs) | two diffs of ~100 lines |
+| `s4-async` | Write a tokio worker pool with graceful shutdown | `RUNTIME.md`: cancellation, task ownership, channels by role, locks | two crates of ~250 lines |
+| `s5-review` | Review the `s2` crate without editing it | The reviewing branch of the skill: findings, citations, rewrites | two findings lists |
 
-| Scenario | Workload | Evidence |
-| --- | --- | --- |
-| s1-ratelimit | Write a rate-limiter library | Historical rule-adherence rubric |
-| s2-refactor | Refactor thirteen planted style patterns | Historical answer key; bare already fixed twelve |
-| s3-extend | Extend a session store | Historical rule-adherence rubric |
-| s4-async | Async worker pool with shutdown | Historical rubric; CLI stdout exception applies in both passes |
-| s5-review | Review the original refactor fixture | Historical rule-adherence rubric |
-| s6-decoder | Decoder library | Constructor, FromStr, and Serde agree on all u8 inputs; malformed input; signed minimum negation |
-| s7-inference | Inference admission scheduler | Prior admission survives policy changes; rejection preserves input; removal returns authoritative children and remaining state |
-| s8-cli | Small configuration CLI | Literal historical bytes, migration semantics, corrupt input, new writes, stdout; simple labels need no wrapper |
-| s9-review | Review the CLI without edits | Two real semantic findings; false positives on valid simple code counted separately |
+`s3-extend` and `s1-ratelimit` are the two to read if time is short: the smallest diffs with the clearest rule-level differences.
 
-The new `oracle.rs` files are kept outside `start/`. After generation, the scorer copies a tree to a temporary directory and runs the external oracle as its own integration-test target. Oracle tests check public behavior and do not require a chosen implementation. Agent-generated tests are counted separately. The review case uses its own [rubric](scenarios/s9-review/rubric.md); verify that its tree remains unchanged.
+Each scenario folder holds `prompt.md`, identical for both arms, and a `start/` crate. It also holds a `rubric.md`, or `answer-key.md` for `s2`, that lists the skill entries the scenario can exercise and what to look for under each.
 
-## Local validation, no model calls
-
-Run from this directory:
+## Running
 
 ```bash
-python3 -m unittest discover -s . -p 'test_*.py' -v
-cargo +1.97.1 test --manifest-path examples/Cargo.toml --doc --locked
-python3 verify_fixtures.py
-bash -n run.sh score.sh compare.sh
+./run.sh s1-ratelimit bare      # one arm; the outputs are listed below
+./run.sh s1-ratelimit skill
+./score.sh s1-ratelimit         # cargo test, the LINTS.md check command, and pattern counts for both arms
+./analyze.py summary            # one line per run: exit, wall, turns, cost, skill files read, check and fmt
 ```
 
-The doctest crate includes the actual Markdown references, so edited examples cannot drift from a copied test. It includes a compile-fail probe demonstrating that a Send stored type may return a non-Send future. `verify_fixtures.py` checks that each new starting crate compiles, that its oracle fails on the semantic bugs, and that minimal repairs pass. Those repairs are fixture controls, not model evaluation results.
+`run.sh` copies `start/` to a throwaway directory under `/tmp/idiomatic-rust-eval/` and runs the agent there with all permissions granted. It then writes `results/<scenario>/<arm>/`:
 
-## Model runs
+- `prompt.txt`: the prompt as sent, with the skill arm's extra line.
+- `transcript.jsonl`: the `stream-json` transcript. `jq` can list the tool calls from it.
+- `stderr.log`: the CLI's stderr.
+- `tree/`: the final crate without `target/` and `.claude/`.
+- `final-message.md`: the agent's last message. For `s5-review` this is the findings list.
+- `meta.json`: exit status, wall time, turns, cost, and one line per tool call.
 
-Preview the concrete campaign before authorizing it:
+`analyze.py meta` writes the last two, and `run.sh` calls it. `score.sh` runs on the copied trees. It reads the check flags from the `flags=( ... )` block in `LINTS.md`, so the lint set is written once. It appends `cargo` output to `results/<scenario>/<arm>/score.log`, and a tree that does not compile scores as `BUILD FAILED`, not as zero findings. Missing build completion, malformed compiler JSON, and startup failures with only stderr score as `INCOMPLETE`. The documented s4 CLI stdout exception applies in both Clippy passes.
 
-```bash
-EVAL_DRY_RUN=1 ./compare.sh claude-fable-5-1 2
-# 24 runs; maximum requested model budget $48
-```
+Two environment variables adjust a run. `EVAL_WORK_ROOT` moves the throwaway directory (default `/tmp/idiomatic-rust-eval`). `EVAL_LIMIT_SECONDS` caps one run's wall time (default 2400). The `s4-async` skill arm took 26 minutes on 2026-09-04, so the cap is not generous.
 
-After authorization, the same command without `EVAL_DRY_RUN=1` runs two repetitions of all three arms over s6 through s9. Pass scenario names after the per-run budget to narrow the campaign. `EVAL_REPEATS` must be at least two. Arm order reverses on even repetitions. The per-run wall timeout defaults to 2400 seconds; set `EVAL_LIMIT_SECONDS=300` for a five-minute cap. A budget or timeout termination is incomplete evidence, not a losing correctness score. The campaign stops on an incomplete run.
+## Reading
 
-For individual authorized runs:
+For each scenario, open `results/<scenario>/bare/tree/src` and `results/<scenario>/skill/tree/src` side by side, with the rubric beside them. For `s2` and `s3`, diff each tree against `start/` instead. For each rubric row mark the arm that did it, both, or neither. A row where both arms do the same thing is a rule the model already follows. That is evidence the sentence is a no-op on this model. A row where only the skill arm does it is the skill earning its load. A row where neither does it is a rule that is not landing as written.
 
-```bash
-EVAL_MAX_BUDGET_USD=2 ./run.sh s6-decoder bare claude-fable-5-1
-EVAL_MAX_BUDGET_USD=2 ./run.sh s6-decoder merged claude-fable-5-1
-EVAL_MAX_BUDGET_USD=2 ./run.sh s6-decoder skill claude-fable-5-1
-./score.sh s6-decoder
-./analyze.py summary
-```
+`results/<scenario>/comparison.md` is the place for the verdict per row and for anything the rubric did not anticipate.
 
-`EVAL_RESULTS_ROOT` selects the results directory; `EVAL_WORK_ROOT` selects the throwaway workspace root (default `/tmp/idiomatic-rust-eval`). A run refuses to overwrite an existing transcript. A campaign uses `repeat-N/<scenario>/<arm>/`; single runs use `<scenario>/<arm>/`.
-
-Each run saves `prompt.txt`, `toolchain.txt`, `inputs.json`, the injected `idiomatic-rust/` snapshot when applicable, `transcript.jsonl`, `stderr.log`, `tree/`, `final-message.md`, and `meta.json`. The last two come from `analyze.py meta`. Missing result events, error results, budget exhaustion, and nonzero CLI exits remain incomplete. Unknown cost stays unknown.
-
-`score.sh` calls `score.py`. It reads the base flags from `LINTS.md`, plus the scenario's `lints.json` in **both** Clippy passes, and saves `score.json` and `score.log` per arm. All-target checks additionally relax test panic lints. Rustc errors are `BUILD FAILED`; failed startup, missing compiler JSON, and missing build completion are `INCOMPLETE`. A denied lint on a completed build is counted as a finding. Neither failed infrastructure nor an empty successful stub can score clean. Raw pattern counts are no longer treated as quality scores.
-
-Results are ignored by Git. Publish a compact matrix and enough artifacts to audit each conclusion; do not publish private prompts, credentials, or source-specific investigations. The completed trial's source patch and machine-readable evidence are in [evidence/2026-09-05](evidence/2026-09-05/).
+`results/` is untracked (see `.gitignore`), so a run's trees, transcripts, and comparisons stay on the machine that ran it. The section below records what each run concluded, so the conclusion outlives the machine.
 
 ## Results
 
@@ -84,29 +67,18 @@ Results are ignored by Git. Publish a compact matrix and enough artifacts to aud
 - **Left for the owner.** Whether "The compiler is the guardrail" exempts two free-text `String` parameters such as `(title, body)`, and whether a renewal counter deserves a newtype.
 - **Fork issue #6 item 5 (trim each entry to three or four sentences) was not applied as written.** The sentences that produced the differences above are spread through the long entries, and a blanket cap would remove them with the no-ops. The trim applied is the evidence-backed cut listed above.
 
-### 2026-09-05, issue 8 revision
+## Caveats
 
-Local validation: 13 Python regression tests passed; 11 executable Rust examples and one expected compile failure passed on Rust 1.97.1. The external fixtures rejected the planted semantic bugs and passed all 10 external tests after minimal repairs. This demonstrates useful correctness checks, not a model improvement.
+One run per arm per scenario, so a single run's choices (the `Clock` trait, the `SegQueue`) may not repeat. A weaker model would show a larger gap on the mechanical rows. The skill arm's prompt carried one extra line: "Follow the idiomatic-rust skill ... including its Check step". That line is the cost of having the skill, not a confound.
 
-One capped **bare decoder trial** completed on `claude-fable-5-1`: 148 seconds, 9 turns, reported cost $1.0834625, 14 generated tests and 3 external tests passed. It retained the borrowed decoder API and existing dependencies, routed parsing and Serde through checked conversion, and used checked nonzero negation. There was one library lint diagnostic and two all-target diagnostics (`missing_errors_doc`), which do not negate the semantic result. This is another example of bare-model correctness, not evidence for the revised skill.
+The skill arm injects `SKILL.md` into the system prompt, so the suite measures what the skill does once loaded. It does not measure whether the skill triggers on its own from its `description`. That needs a run without `--safe-mode`, with the skill installed and nothing else, and a check in the transcript that `SKILL.md` was read. This suite does not run that.
 
-The trial ran before lockfiles were added to the start trees. Its resolved lockfile is recorded with the evidence, and it is excluded from the planned repeated comparison. The matrix below distinguishes completed evidence from missing work.
+## Why not `claude plugin eval`
 
-| Probe | Bare | Merged | Revised | Conclusion |
-| --- | --- | --- | --- | --- |
-| Decoder trial | 3/3 independent tests; $1.0834625; 148 seconds | Not run | Not run | One successful infrastructure/correctness trial only |
-| Repeated decoder comparison, two runs per arm | Not run | Not run | Not run | Pending authorization |
-| Repeated inference comparison, two runs per arm | First attempt interrupted; cost unknown | Not run | Not run | Incomplete |
-| Repeated CLI comparison, two runs per arm | First attempt interrupted; cost unknown | Not run | Not run | Incomplete |
-| Repeated review comparison, two runs per arm | First attempt interrupted; cost unknown | Not run | Not run | Recall and false positives not measured |
-| Real-ticket probe | Not run | Not run | Not run | Still required before promotion |
+The CLI ships `claude plugin eval` with a built-in with/without ablation arm, which is this suite's design. It is early access and gated on this account as of 2026-09-04, and its case format is only partly documented. The scenarios are already `prompt.md` plus a rubric, so porting them to `case.yaml` files once the command is available is a small change.
 
-Automatic approval review rejected the repeated campaign because aggregate spend and unrestricted agent execution had not been explicitly approved. Three sibling runs had started; they and their descendants were stopped. Their incomplete transcripts have no final cost event, so their cost is unknown, not zero. No revised-versus-merged quality or cost ratio can be inferred from these attempts. The next concrete campaign is 24 runs, capped at $2 each ($48 total requested limit) and five minutes each, after approval. The real-ticket probe also needs a selected public ticket and an agreed budget.
+## Issue 8 scope
 
-The trial patch, scorer output, input hashes, toolchain record, and metadata are published beside this report. Full transcripts stay local; hashes identify them for audit. Source-specific research remains internal and is not a shipped fixture.
+The follow-up keeps the existing two-arm runner and scenario layout. Run `python3 test_score.py` here to check scorer failures and the s4 stdout exception without calling a model. New repeated bare/merged/revised comparisons, semantic evaluation scenarios, and the real-ticket probe belong in a separate follow-up. They remain required evidence before promotion; this skill stays in progress.
 
-## Promotion gate
-
-Complete repeated bare/merged/revised comparisons, review the separate dimensions in [RUBRIC.md](RUBRIC.md), and run its real-ticket probe before promotion. Publish resolved models, exact input revisions, per-run costs, failures, and a result matrix. The original 12-of-13 bare result and 2.0x-dollar/2.3x-time overhead remain relevant evidence. Improvements in rule adherence alone do not justify promotion.
-
-This suite measures behavior after explicit skill loading, not automatic invocation from the skill description. A real-ticket probe is also distinct from these self-contained synthetic fixtures. Neither is claimed complete here.
+The 2026-09-05 preliminary bare decoder trial reported $1.0834625 and 148 seconds, with three external tests passing. Three sibling starts were stopped after automatic approval review rejected the repeated campaign; their costs are unknown. The trial and expansion remain recoverable in commit `1310413`. They do not establish a revised-versus-merged improvement. The published 2026-09-04 results above remain unchanged.

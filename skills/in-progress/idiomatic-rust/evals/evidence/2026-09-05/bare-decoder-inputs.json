@@ -1,9 +1,0 @@
-{
-  "start": {
-    "Cargo.toml": "ece60e16784ad7af92718f6bb5c4bc8e3731ea20932156d30335164a41afa255",
-    "rust-toolchain.toml": "d62fe5942695d5651454b25402abba836210f5e3bd335a150589733dc9cbf39c",
-    "src/lib.rs": "f5fdc9aed706d6a564ec14e3cd11b82b69e1e02fbd70e5db4614beb6d2944d12"
-  },
-  "prompt": "cf561bbc4846d9548b1daebb584ae9146f64f99ea383ce379c0df7c80853873c",
-  "oracle": "b9be68f881164c1d1964273920623385fab8968167a92f45e5b74539f531aa0d"
-}

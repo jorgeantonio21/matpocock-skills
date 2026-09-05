@@ -1,89 +1,114 @@
-"""Regression tests for real scorer process and diagnostic failure modes."""
+#!/usr/bin/env python3
+"""Exercise the shipped shell scorer with deterministic Cargo process fixtures."""
 
-import importlib.util
-import io
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
 
-SPEC = importlib.util.spec_from_file_location("score", Path(__file__).with_name("score.py"))
-score = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(score)
+HERE = Path(__file__).resolve().parent
 
 
-def messages(code=None, level="error", finish=False):
-    return "\n".join(json.dumps(event) for event in [
-        {"reason": "compiler-message", "message": {"level": level, "message": "diagnostic", "code": {"code": code} if code else None}},
-        {"reason": "build-finished", "success": finish},
-    ])
-
-
-class ScoringTests(unittest.TestCase):
-    def test_startup_failure_with_only_stderr(self):
-        with tempfile.TemporaryDirectory() as temp:
-            cargo = Path(temp) / "cargo"
-            cargo.write_text("#!/bin/sh\necho 'could not start compiler' >&2\nexit 1\n")
-            cargo.chmod(0o755)
-            log = io.StringIO()
-            with patch.dict(os.environ, {"PATH": temp}):
-                status, stdout = score.run(["cargo", "clippy"], temp, log)
-            self.assertEqual(score.classify_lints(status, stdout)["status"], "INCOMPLETE")
-            self.assertIn("could not start compiler", log.getvalue())
-
-    def test_missing_executable(self):
-        with patch.dict(os.environ, {"PATH": ""}):
-            status, stdout = score.run(["cargo"], "/tmp", io.StringIO())
-        self.assertEqual(score.classify_lints(status, stdout)["status"], "INCOMPLETE")
-
-    def test_empty_success_is_not_clean(self):
-        self.assertEqual(score.classify_lints(0, "")["status"], "INCOMPLETE")
-
-    def test_rustc_error(self):
-        for code in ("E0308", None):
-            self.assertEqual(score.classify_lints(101, messages(code))["status"], "BUILD FAILED")
-
-    def test_lint_denial_is_counted(self):
-        result = score.classify_lints(101, messages("clippy::unwrap_used"))
-        self.assertEqual((result["status"], result["count"]), ("FINDINGS", 1))
-
-    def test_truncated_json_does_not_look_clean(self):
-        self.assertEqual(score.classify_lints(1, '{"reason":')["status"], "INCOMPLETE")
-
-    def test_warning_cannot_mask_infrastructure_failure(self):
-        self.assertEqual(score.classify_lints(1, messages("unused_imports", "warning"))["status"], "INCOMPLETE")
-
-    def test_success_requires_finished_build(self):
-        self.assertEqual(score.classify_lints(0, '{"reason":"build-finished","success":true}')["status"], "CLEAN")
-
-    def test_cli_exception_and_test_relaxations_reach_both_passes(self):
-        with tempfile.TemporaryDirectory() as temp:
+class ScorerTests(unittest.TestCase):
+    def score(self, *, status=0, stdout='', stderr=''):
+        with tempfile.TemporaryDirectory(prefix='rust-score-test-') as temp:
             root = Path(temp)
-            scenario = root / "cli"
-            scenario.mkdir()
-            (scenario / "lints.json").write_text('["-A", "clippy::print_stdout"]')
-            tree = root / "results" / "cli" / "skill" / "tree"
-            (tree / "src").mkdir(parents=True)
-            (tree / "Cargo.toml").write_text("")
-            calls = []
+            evals = root / 'evals'
+            evals.mkdir()
+            shutil.copyfile(HERE / 'score.sh', evals / 'score.sh')
+            shutil.copyfile(HERE.parent / 'LINTS.md', root / 'LINTS.md')
+            tree = evals / 'results/s4-async/bare/tree'
+            (tree / 'src').mkdir(parents=True)
+            (tree / 'src/main.rs').write_text('fn main() {}\n')
+            stub = root / 'cargo'
+            stub.write_text('''#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+with Path(os.environ['CARGO_CALLS']).open('a') as log:
+    log.write(json.dumps(sys.argv[1:]) + '\\n')
+if sys.argv[1] == 'test':
+    print('test result: ok. 1 passed')
+    sys.exit(0)
+print(os.environ['CARGO_STDOUT'])
+print(os.environ['CARGO_STDERR'], file=sys.stderr)
+sys.exit(int(os.environ['CARGO_STATUS']))
+''')
+            stub.chmod(0o755)
+            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
+                       CARGO_CALLS=str(root / 'calls'), CARGO_STDOUT=stdout,
+                       CARGO_STDERR=stderr, CARGO_STATUS=str(status))
+            result = subprocess.run(['bash', str(evals / 'score.sh'), 's4-async'],
+                                    env=env, capture_output=True, text=True, check=True)
+            calls = [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
+            log = (tree.parent / 'score.log').read_text()
+            return result.stdout, calls, log
 
-            def cargo(command, tree, log):
-                calls.append(command)
-                return (0, "test result: ok. 1 passed" if command[1] == "test" else '{"reason":"build-finished","success":true}')
+    def test_startup_failure_is_incomplete(self):
+        output, _, log = self.score(status=1, stderr='compiler could not start')
+        self.assertIn('INCOMPLETE', output)
+        self.assertNotIn('0 ()', output)
+        self.assertIn('compiler could not start', log)
 
-            with patch.object(score, "run", side_effect=cargo):
-                score.score_arm(scenario, "skill", root / "results")
-            clippy = [call for call in calls if call[1] == "clippy"]
-            self.assertEqual(len(clippy), 2)
-            for command in clippy:
-                index = len(command) - 1 - command[::-1].index("clippy::print_stdout")
-                self.assertEqual(command[index - 1], "-A")
-            for lint in ("unwrap_used", "expect_used", "panic_in_result_fn"):
-                index = len(clippy[1]) - 1 - clippy[1][::-1].index(f"clippy::{lint}")
-                self.assertEqual(clippy[1][index - 1], "-A")
+    def test_empty_success_is_incomplete(self):
+        output, _, _ = self.score()
+        self.assertIn('INCOMPLETE', output)
+
+    def test_invalid_json_is_incomplete(self):
+        output, _, _ = self.score(status=1, stdout='{"reason":')
+        self.assertIn('INCOMPLETE', output)
+
+    def test_non_object_json_is_incomplete(self):
+        output, _, _ = self.score(stdout='[]')
+        self.assertIn('INCOMPLETE', output)
+
+    def test_lint_without_build_completion_is_incomplete(self):
+        event = {'reason': 'compiler-message', 'message': {
+            'level': 'error', 'code': {'code': 'clippy::unwrap_used'},
+            'message': 'unwrap used'}}
+        output, _, _ = self.score(status=101, stdout=json.dumps(event))
+        self.assertIn('INCOMPLETE', output)
+
+    def test_rustc_errors_remain_build_failures(self):
+        for code in ({'code': 'E0308'}, None):
+            event = {'reason': 'compiler-message', 'message': {
+                'level': 'error', 'code': code, 'message': 'invalid program'}}
+            output, _, _ = self.score(status=101, stdout=json.dumps(event))
+            self.assertIn('BUILD FAILED (rustc errors: 1)', output)
+
+    def test_completed_lint_failure_is_counted(self):
+        events = [
+            {'reason': 'compiler-message', 'message': {
+                'level': 'error', 'code': {'code': 'clippy::unwrap_used'},
+                'message': 'unwrap used'}},
+            {'reason': 'build-finished', 'success': False},
+        ]
+        output, _, log = self.score(status=101, stdout='\n'.join(map(json.dumps, events)))
+        self.assertIn('1 (clippy::unwrap_used 1)', output)
+        self.assertNotIn('INCOMPLETE', output)
+        self.assertIn('unwrap used', log)
+
+    def test_clean_build_and_stdout_exception_in_both_passes(self):
+        output, calls, _ = self.score(stdout='{"reason":"build-finished","success":true}')
+        self.assertIn('0 ()', output)
+        clippy = [call for call in calls if call[0] == 'clippy']
+        self.assertEqual(len(clippy), 2)
+        for call in clippy:
+            index = len(call) - 1 - call[::-1].index('clippy::print_stdout')
+            self.assertEqual(call[index - 1], '-A')
+
+    def test_warning_cannot_mask_failed_build(self):
+        events = [
+            {'reason': 'compiler-message', 'message': {
+                'level': 'warning', 'code': {'code': 'unused_imports'},
+                'message': 'unused import'}},
+            {'reason': 'build-finished', 'success': False},
+        ]
+        output, _, _ = self.score(status=1, stdout='\n'.join(map(json.dumps, events)))
+        self.assertIn('INCOMPLETE', output)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

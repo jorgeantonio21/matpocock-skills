@@ -1,6 +1,6 @@
 # Invariant patterns
 
-Read the pattern relevant to the change. Each example is independent; the examples do not assemble into an application. The evaluation harness compiles and runs these Rust blocks, including the Serde example.
+Read the pattern relevant to the change. Each example is independent; the examples do not assemble into an application. The Rust blocks are self-contained. The Serde example requires `serde` with its derive feature and `serde_json`.
 
 ## Intrinsic value invariant and checked entry paths
 
@@ -19,13 +19,21 @@ mod limits {
 
     impl Limit {
         pub const fn new(value: u8) -> Option<Self> {
-            if value >= 1 && value <= 10 { Some(Self(value)) } else { None }
+            if value >= 1 && value <= 10 {
+                Some(Self(value))
+            } else {
+                None
+            }
         }
-        pub const fn get(self) -> u8 { self.0 }
+
+        pub const fn get(self) -> u8 {
+            self.0
+        }
     }
 
     impl TryFrom<u8> for Limit {
         type Error = String;
+
         fn try_from(value: u8) -> Result<Self, Self::Error> {
             Self::new(value).ok_or_else(|| format!("limit {value} is outside 1..=10"))
         }
@@ -33,6 +41,7 @@ mod limits {
 
     impl FromStr for Limit {
         type Err = String;
+
         fn from_str(raw: &str) -> Result<Self, Self::Err> {
             let value = raw.parse::<u8>().map_err(|error| error.to_string())?;
             Self::try_from(value)
@@ -41,7 +50,9 @@ mod limits {
 }
 
 use limits::Limit;
+
 const TEN: Option<Limit> = Limit::new(10);
+
 assert_eq!(TEN.map(Limit::get), Some(10));
 assert!(Limit::new(11).is_none());
 assert!(Limit::try_from(11).is_err());
@@ -70,11 +81,17 @@ mod ranges {
             {
                 return Err("ranges must be nonempty, ordered, and non-overlapping");
             }
+
             Ok(Self(raw))
         }
-        pub fn as_slice(&self) -> &[Range<u32>] { &self.0 }
+
+        pub fn as_slice(&self) -> &[Range<u32>] {
+            &self.0
+        }
+
         pub fn replace(&mut self, raw: Vec<Range<u32>>) -> Result<(), &'static str> {
             let next = Self::new(raw)?;
+
             *self = next;
             Ok(())
         }
@@ -102,16 +119,24 @@ mod admission {
         max_new_tokens: u32,
         accepted: VecDeque<u32>,
     }
+
     impl Scheduler {
-        pub fn set_max_new_tokens(&mut self, max: u32) { self.max_new_tokens = max; }
+        pub fn set_max_new_tokens(&mut self, max: u32) {
+            self.max_new_tokens = max;
+        }
+
         pub fn admit(&mut self, tokens: u32) -> Result<(), &'static str> {
             if tokens == 0 || tokens > self.max_new_tokens {
                 return Err("request exceeds admission policy");
             }
+
             self.accepted.push_back(tokens);
             Ok(())
         }
-        pub fn next_accepted(&mut self) -> Option<u32> { self.accepted.pop_front() }
+
+        pub fn next_accepted(&mut self) -> Option<u32> {
+            self.accepted.pop_front()
+        }
     }
 }
 
@@ -131,29 +156,51 @@ The private queue and narrow admission method suffice here; a branded request is
 
 ```rust
 #[derive(Debug)]
-struct RawRequest { batch: u8, tokens: u16 }
+struct RawRequest {
+    batch: u8,
+    tokens: u16,
+}
 
 #[derive(Debug, PartialEq, Eq)]
-struct Request { batch: u8, tokens: u16 }
+struct Request {
+    batch: u8,
+    tokens: u16,
+}
 
 fn decode(bytes: &[u8]) -> Result<RawRequest, &'static str> {
-    let [batch, lo, hi] = bytes else { return Err("expected three bytes"); };
-    Ok(RawRequest { batch: *batch, tokens: u16::from_le_bytes([*lo, *hi]) })
+    let [batch, lo, hi] = bytes else {
+        return Err("expected three bytes");
+    };
+
+    Ok(RawRequest {
+        batch: *batch,
+        tokens: u16::from_le_bytes([*lo, *hi]),
+    })
 }
 
 impl TryFrom<RawRequest> for Request {
     type Error = &'static str;
+
     fn try_from(raw: RawRequest) -> Result<Self, Self::Error> {
         if raw.batch == 0 || raw.tokens == 0 || u16::from(raw.batch) > raw.tokens {
             return Err("every batch item needs at least one token");
         }
-        Ok(Self { batch: raw.batch, tokens: raw.tokens })
+
+        Ok(Self {
+            batch: raw.batch,
+            tokens: raw.tokens,
+        })
     }
 }
 
 assert!(decode(&[3, 2, 0]).is_ok());
 assert!(Request::try_from(decode(&[3, 2, 0]).unwrap()).is_err());
-assert_eq!(Request::try_from(decode(&[2, 3, 0]).unwrap()).unwrap().tokens, 3);
+assert_eq!(
+    Request::try_from(decode(&[2, 3, 0]).unwrap())
+        .unwrap()
+        .tokens,
+    3
+);
 ```
 
 These types are private to this small example. In a public library, put the validated type and its conversions in the module that owns the guarantee. A validation library on `RawRequest` can help report several problems, provided this conversion cannot skip it.
@@ -169,7 +216,10 @@ fn checked_negate(value: NonZeroI32) -> Option<NonZeroI32> {
     value.get().checked_neg().and_then(NonZeroI32::new)
 }
 
-assert_eq!(checked_negate(NonZeroI32::new(7).unwrap()).unwrap().get(), -7);
+assert_eq!(
+    checked_negate(NonZeroI32::new(7).unwrap()).unwrap().get(),
+    -7
+);
 assert_eq!(checked_negate(NonZeroI32::new(i32::MIN).unwrap()), None);
 ```
 
@@ -183,17 +233,30 @@ The return type reflects two facts: success is nonzero, and not every input can 
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Eq)]
-struct Removal { children: Vec<u64>, remaining_groups: usize }
+struct Removal {
+    children: Vec<u64>,
+    remaining_groups: usize,
+}
 
 fn remove(groups: &mut HashMap<String, Vec<u64>>, key: &str) -> Option<Removal> {
     let children = groups.remove(key)?;
-    Some(Removal { children, remaining_groups: groups.len() })
+
+    Some(Removal {
+        children,
+        remaining_groups: groups.len(),
+    })
 }
 
 let mut groups = HashMap::from([("a".to_owned(), vec![1, 2])]);
 let removed = remove(&mut groups, "a").unwrap();
 groups.insert("b".to_owned(), vec![3]);
-assert_eq!(removed, Removal { children: vec![1, 2], remaining_groups: 0 });
+assert_eq!(
+    removed,
+    Removal {
+        children: vec![1, 2],
+        remaining_groups: 0
+    }
+);
 ```
 
 The result describes one transition, not the current state forever. With concurrent storage, removal and the reported state need one appropriate transaction or synchronization scope. Merely placing two independent database reads in this function would not provide that guarantee.
@@ -204,7 +267,12 @@ The result describes one transition, not the current state forever. With concurr
 
 ```rust
 #[derive(Clone, Copy)]
-enum Status { Queued, Running, Succeeded, Failed }
+enum Status {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+}
 
 impl Status {
     fn is_terminal(self) -> bool {
@@ -231,7 +299,10 @@ An exhaustive match makes a new variant require a decision. It cannot decide the
 use std::num::NonZeroU8;
 
 #[derive(Debug, PartialEq, Eq)]
-enum Capacity { LegacyUnlimited, Bounded(NonZeroU8) }
+enum Capacity {
+    LegacyUnlimited,
+    Bounded(NonZeroU8),
+}
 
 fn load(bytes: &[u8]) -> Result<Capacity, &'static str> {
     match bytes {
@@ -243,7 +314,7 @@ fn load(bytes: &[u8]) -> Result<Capacity, &'static str> {
     }
 }
 
-// Version 1 encoded unlimited as zero; version 2 allows only bounded writes.
+// Version 1 encodes unlimited as zero; version 2 allows only bounded writes.
 assert_eq!(load(&[1, 0]), Ok(Capacity::LegacyUnlimited));
 assert_eq!(load(&[1, 4]), load(&[2, 4]));
 assert!(load(&[2, 0]).is_err());
