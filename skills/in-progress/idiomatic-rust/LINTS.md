@@ -1,6 +1,6 @@
 # Lints
 
-The mechanical layer of `idiomatic-rust`. This file holds the check command for the crates a diff touches, the `#[expect]` policy, and the rules the command retires from `SKILL.md`. It also holds the same lint set as a workspace block for a repo that wants it in CI. Every lint name is verified against clippy 0.1.97 on Rust 1.97.1. The Calibration section at the end holds the evidence.
+The mechanical layer of `idiomatic-rust`: the check command for the crates a diff touches, the `#[expect]` policy, the rules the command retires from `SKILL.md`, and the same lint set as a workspace block for a repo that wants it in CI. Every lint name resolves on clippy 0.1.97 (Rust 1.97.1); the measurements behind the set are in [`evals/README.md`](evals/README.md) under "Lint calibration".
 
 ## The check command
 
@@ -22,19 +22,19 @@ cargo clippy --no-deps -p <crate> --all-features -- "${flags[@]}"
 
 What each part does:
 
-- `--no-deps -p <crate>` confines linting to the named crate. Without `--no-deps`, clippy lints every workspace member in the crate's build graph. A pedantic pass over a codebase that never ran one then fails on the first dependency's pre-existing findings, before it reaches the touched crate.
-- `-D warnings` makes every finding fail the run. The `-W` and `-D` spellings that follow carry into the workspace block below, where the difference between warn and deny matters.
+- `--no-deps -p <crate>` confines linting to the named crate. Without it, a pedantic pass over a workspace that never ran one fails on a dependency's pre-existing findings before it reaches the touched crate.
+- `-D warnings` makes every finding fail the run. The `-W` and `-D` spellings carry into the workspace block below, where warn and deny differ.
 - `-W clippy::pedantic` turns on the group that holds most of the rules in the table below.
-- `-A clippy::similar_names`: pairs such as `job_a` and `job_b` are deliberate in code that compares two values of one kind. The lint has no way to read intent.
+- `-A clippy::similar_names`: pairs such as `job_a` and `job_b` are deliberate in code that compares two values of one kind.
 - `-A clippy::must_use_candidate`: the lint wants `#[must_use]` on every pure function; the skill puts `#[must_use = "reason"]` only where dropping the value is a bug.
-- `-A clippy::inline_always`: the lint's advice is to let the compiler decide; in latency-sensitive code `#[inline(always)]` is a measured decision the lint cannot see.
-- The `-D` picks are restriction lints, plus `await_holding_lock` from suspicious and `large_futures` from pedantic. They are allow by default and never turned on as a group: `blanket_clippy_restriction_lints` fires on `-W clippy::restriction`. For a binary whose stdout is its product (a CLI tool, a report generator), add `-A clippy::print_stdout` to that crate's run; a service keeps the `-D`. For a binary crate that uses `pub` to organise its own modules, add `-A unreachable_pub` to that crate's run. `expect_used` is not in the set. `expect` with the invariant as the message is the form the skill asks for at an infallible site. The lint would fire on that form and demand the same reason again in an `#[expect]` attribute. `unwrap_used` stays, so `unwrap` never passes.
-- `unimplemented` is a `-D` and `todo` is a `-W`. Under `-D warnings` both fail the handback check, since finished code carries neither. The workspace block below keeps `todo` at warn, so a work-in-progress build in CI still compiles.
-- The `-W` rustc lints. `unreachable_pub` asks for `pub(crate)` on items the crate never exports. `missing_debug_implementations` asks for `Debug` on every public type. `unsafe_op_in_unsafe_fn` asks for an `unsafe` block around each unsafe operation inside an `unsafe fn`. That lint is already warn on edition 2024, and the flag covers 2021 crates.
+- `-A clippy::inline_always`: in latency-sensitive code `#[inline(always)]` is a measured decision the lint cannot see.
+- The `-D` picks are restriction lints, plus `await_holding_lock` (suspicious) and `large_futures` (pedantic). They are picked one by one: `blanket_clippy_restriction_lints` fires on `-W clippy::restriction`. A binary whose stdout is its product (a CLI, a report generator) adds `-A clippy::print_stdout` to its run; a binary crate that organises its modules with `pub` adds `-A unreachable_pub`. `expect_used` is not in the set: `expect` with the invariant as the message is the form the skill asks for at an infallible site, and the lint would demand the same reason again in an attribute. `unwrap_used` stays, so `unwrap` never passes.
+- `unimplemented` is a `-D` and `todo` a `-W`; under `-D warnings` both fail the handback check. The workspace block keeps `todo` at warn, so a work-in-progress build still compiles in CI.
+- The `-W` rustc lints: `unreachable_pub` asks for `pub(crate)` on items the crate never exports, `missing_debug_implementations` for `Debug` on every public type, `unsafe_op_in_unsafe_fn` for an `unsafe` block around each unsafe operation inside an `unsafe fn` (already warn on edition 2024; the flag covers 2021 crates).
 
 ### When the crate has a backlog
 
-A crate that never ran pedantic reports hundreds of pre-existing findings (see Calibration). The fix obligation is the files the diff touches; the rest is the crate's backlog, reported and left alone. This prints only the findings whose primary span sits in a changed file:
+A crate that never ran pedantic reports hundreds of pre-existing findings. The fix obligation is the files the diff touches; the rest is the crate's backlog, reported and left alone. This prints only the findings whose primary span sits in a changed file:
 
 ```bash
 cargo clippy --no-deps -p <crate> --all-features --message-format=json -- "${flags[@]}" | jq -r --argjson files "$(git diff --name-only "$(git merge-base HEAD origin/main)" | jq -R . | jq -s .)" 'select(.reason=="compiler-message") | .message | select(.code != null) | select(any(.spans[]; .is_primary and (.file_name as $f | $files | index($f) != null))) | .rendered'
@@ -42,27 +42,21 @@ cargo clippy --no-deps -p <crate> --all-features --message-format=json -- "${fla
 
 ## Test targets
 
-The command above checks the crate's library and binaries, so `#[cfg(test)]` code is not compiled and a test's `unwrap()` never reaches the lint. Test code gets a second run over every target with the two panic lints relaxed. In a test, `unwrap` and `assert!` inside a `Result`-returning function are the idiom the Words section asks for:
+The command above compiles no `#[cfg(test)]` code, so a test's `unwrap()` never reaches the lint. A second run covers every target with the two panic lints relaxed, since `unwrap` and `assert!` inside a `Result`-returning test are the idiom the Words section asks for:
 
 ```bash
 cargo clippy --no-deps -p <crate> --all-targets --all-features -- "${flags[@]}" -A clippy::unwrap_used -A clippy::panic_in_result_fn
 ```
 
-The two trailing `-A` flags override the `-D` for the same lints inside `flags`. The compiler applies lint flags in order, and the last one wins.
-
-The trade-off against stopping after the first run: the first run alone leaves tests, benches, and examples unlinted. The second run costs one more build of the test targets. Run the second once the first is clean, since a failing library target cancels the targets that depend on it. Both pass, or the check fails.
-
-A `clippy.toml` with `allow-unwrap-in-tests` would fold the two runs into one, at the price of a file in the target repo. The two-run form keeps the repo untouched.
+The trailing `-A` flags override the `-D` for the same lints inside `flags`: the compiler applies lint flags in order, and the last one wins. Run the second once the first is clean, since a failing library target cancels the targets that depend on it. Both pass, or the check fails. A `clippy.toml` with `allow-unwrap-in-tests` would fold the two runs into one at the price of a file in the target repo, and it does not clear `panic_in_result_fn`; the two-run form keeps the repo untouched.
 
 ## `#[expect]` policy
 
-A finding is fixed, or the one item it fires on carries `#[expect(lint, reason = "...")]`. Write one lint per attribute. Put the attribute on the statement, function, or type the finding names. Write a reason that states the invariant the lint cannot see. `expect` warns when the lint stops firing, so a suppression that outlives its cause removes itself. `allow_attributes_without_reason` in the command makes the reason mechanical.
-
-The check command holds the only `-D warnings`, and source files set no lint level. A toolchain bump then arrives as findings to fix on the next run rather than as a broken build.
+A finding is fixed, or the one item it fires on carries `#[expect(lint, reason = "...")]`: one lint per attribute, on the statement, function, or type the finding names, with a reason that states the invariant the lint cannot see. `expect` warns when the lint stops firing, so a suppression that outlives its cause removes itself, and `allow_attributes_without_reason` in the command makes the reason mechanical. The check command holds the only `-D warnings`, and source files set no lint level, so a toolchain bump arrives as findings to fix on the next run rather than as a broken build.
 
 ## What the command retires
 
-Each rule below is enforced by the command. A row marked *reinforced* also keeps one sentence in `SKILL.md`, because an LLM writes the pattern even with the lint on. Every other row appears only here. A rule with no active lint stays in the skill. Examples: a clone to satisfy the borrow checker, `Arc::clone(&x)` spelled out, a `_` arm on a local enum, and five or fewer parameters. `too_many_arguments` fires only at eight. The Level column: `default` is a style, complexity, perf, or suspicious lint that is warn out of the box. `pedantic` arrives with `-W clippy::pedantic`. `pick` is a `-D` in the command. `rustc` is a `-W` in the command.
+Each rule below is enforced by the command. A row marked *reinforced* also keeps one sentence in `SKILL.md`, because an LLM writes the pattern even with the lint on; every other row appears only here. A rule with no active lint stays in the skill: a clone to satisfy the borrow checker, `Arc::clone(&x)` spelled out, a `_` arm on a local enum, and five or fewer parameters (`too_many_arguments` fires only at eight). The Level column: `default` is a style, complexity, perf, or suspicious lint that is warn out of the box; `pedantic` arrives with `-W clippy::pedantic`; `pick` is a `-D` in the command; `rustc` is a `-W` in the command.
 
 | Section | Rule | Lint | Level |
 | --- | --- | --- | --- |
@@ -122,7 +116,7 @@ Each rule below is enforced by the command. A row marked *reinforced* also keeps
 
 ## Optional workspace block
 
-The same set as manifest lints, for a repository that wants the check in CI. This block is an option the repository owner takes. It is never a step the skill takes. With the block in the root `Cargo.toml`, each member crate opts in with `[lints] workspace = true`, and the check command shrinks to `cargo clippy --no-deps -p <crate> --all-features -- -D warnings`. The block is formatted with `taplo fmt` (aligned entries, reordered keys).
+The same set as manifest lints, for a repository that wants the check in CI. The block is an option the repository owner takes, never a step the skill takes. With it in the root `Cargo.toml`, each member crate opts in with `[lints] workspace = true`, and the check command shrinks to `cargo clippy --no-deps -p <crate> --all-features -- -D warnings`. The block is formatted with `taplo fmt`.
 
 ```toml
 [workspace.lints.rust]
@@ -149,7 +143,7 @@ unimplemented                   = "deny"
 unwrap_used                     = "deny"
 ```
 
-The test relaxation has no manifest form. A repo with the block adds `allow-unwrap-in-tests = true` to a `clippy.toml`. `panic_in_result_fn` still needs the second run, or an `#[expect]` per `Result`-returning test.
+The test relaxation has no manifest form. A repo with the block adds `allow-unwrap-in-tests = true` to a `clippy.toml`; `panic_in_result_fn` still needs the second run, or an `#[expect]` per `Result`-returning test.
 
 ## Tools
 
@@ -157,17 +151,11 @@ The test relaxation has no manifest form. A repo with the block adds `allow-unwr
 - `cargo-machete`: finds unused dependencies on stable. Run it in CI.
 - `cargo-expand`: shows what a derive emits. Expand every new derive once and read the output for an allocation or dynamic dispatch.
 
-## Calibration
+## After a toolchain bump
 
-The commands were run on 2026-09-04 against Rust 1.97.1 (clippy 0.1.97). Every lint above resolves on that toolchain. To repeat the name check after a toolchain bump, run this with the `flags` array defined. It prints one line per flag the toolchain does not know, and nothing when all resolve:
+Repeat the name check with the `flags` array defined. It prints one line per flag the toolchain does not know, and nothing when all resolve:
 
 ```bash
 rustup run 1.97.1 clippy-driver -W help | rg -o 'clippy::[a-z-]+' | sort -u > /tmp/clippy-lints
 for f in "${flags[@]}"; do case $f in clippy::*) rg -qx "${f//_/-}" /tmp/clippy-lints || echo "unknown: $f";; esac; done
 ```
-
-Three flags changed as a result of the first run. `module_name_repetitions` is not in the `-A` list, because it is a `restriction` lint since 1.93 and relaxing it under pedantic is a no-op. `mem_forget` is not in the `-D` picks. In a workspace with zero-copy wire types, every one of its findings came from a serialization derive expansion and none from hand-written code. The lint does not skip external macros. `-A clippy::inline_always` was added, because a low-latency workspace had 110 deliberate uses in one crate.
-
-On a scratch crate, the first command passes an iterator-chain function, fails with `clippy::unwrap-used` on a `parse().unwrap()` in library code, and ignores test code. The second command passes a test module that holds an `unwrap()` and an `assert!` inside a `Result`-returning test. `panic_in_result_fn` fires on `assert!` and `panic!`, not on `debug_assert!` or `unreachable!`. A `clippy.toml` with `allow-unwrap-in-tests` clears the test `unwrap` but not `panic_in_result_fn`, so a config file cannot replace the second run.
-
-On a 40-crate workspace that never ran pedantic, the shipped set reported 254 findings in a small primitives crate. The top three there: `doc_markdown` 51, `cast_lossless` 46, `missing_errors_doc` 35. The largest domain crate reported 407. The top four there: `missing_errors_doc` 65, `doc_markdown` 65, `expect_used` 53, `unwrap_used` 46. `expect_used` was in the set at the time. Each crate took under ten seconds once the dependencies were built. Without `--no-deps`, the run failed on two findings in a proc-macro crate in the build graph before it reached the named crate. The two binaries of the largest crate carried 82 `print_stdout` findings, which is the case the `-A` above is for. Those counts are why the check is diff-scoped. The filter under "When the crate has a backlog" printed 17 findings for one changed file.

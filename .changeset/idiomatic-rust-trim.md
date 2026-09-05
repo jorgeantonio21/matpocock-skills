@@ -1,0 +1,5 @@
+---
+"mattpocock-skills": patch
+---
+
+`idiomatic-rust`: trim the guidance files without dropping a rule. Every section name, rule heading, and Rust block stays (the rubrics cite the headings and `evals/check.sh` pins the blocks to `examples/`), and every atomic instruction was inventoried before the rewrite and mapped back after it. What changed is the prose: "Do not X. Do Y." pairs become the positive form, each rule keeps one example, a reason stays only where it carries a non-obvious fact, and each meaning lives in one file with a clause-length pointer from the others (the hot-path lock rule in `RUNTIME.md`, the async-trait boxing cost in `CRATES.md`, the three kinds of guarantee in `INVARIANTS.md`). Two redundant code blocks leave `INVARIANTS.md` (the `FromStr` impl for `Concurrency`, the `remove_and_announce` consumer). The lint calibration diary moves from `LINTS.md` to `evals/README.md` under "Lint calibration", and `LINTS.md` keeps the name check to run after a toolchain bump. The flags block, the retire table, and the workspace TOML are byte-identical.
