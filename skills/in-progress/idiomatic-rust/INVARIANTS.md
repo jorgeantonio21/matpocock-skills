@@ -41,18 +41,28 @@ The representation carries the invariant. Every route in goes through `new`: `Tr
 pub struct Concurrency(NonZeroU32);
 ```
 
+Inside `impl Concurrency`, `Self` is `Concurrency`, so `new` returns `Option<Concurrency>`: `Some(Concurrency(nonzero))` for a nonzero input, `None` for zero.
+
 ```rust
+impl Concurrency {
+    /// The smallest limit a pool accepts.
+    pub const ONE: Self = Self(NonZeroU32::MIN);
+
     /// Returns the limit, or `None` when `value` is zero.
     #[must_use]
     pub const fn new(value: u32) -> Option<Self> {
         match NonZeroU32::new(value) {
-            Some(value) => Some(Self(value)),
+            Some(nonzero) => Some(Self(nonzero)),
             None => None,
         }
     }
-```
 
-```rust
+    /// The limit as a plain number, for a log line or a semaphore.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0.get()
+    }
+
     /// Half the limit, rounded down and never below one. The invariant survives the operation.
     #[must_use]
     pub const fn halve(self) -> Self {
@@ -61,6 +71,7 @@ pub struct Concurrency(NonZeroU32);
             None => Self::ONE,
         }
     }
+}
 ```
 
 ```rust
@@ -81,7 +92,7 @@ impl FromStr for Concurrency {
 - **Applies when**: the invariant is a relationship between elements. Sorted, unique, non-overlapping, balanced, a total that matches a sum.
 - **Enough instead**: a `BTreeSet` or a `BTreeMap`, when the standard collection already holds the relationship.
 
-The whole aggregate is checked at once. `new` and `insert` are the only routes in, and the `Vec` is private, so no caller can push. A rejected insert leaves the list unchanged. The JSON route goes through `#[serde(try_from = "Vec<Range<u32>>")]`, so a decoded list takes the same check. Readers get a slice, never a `&mut Vec`.
+The whole aggregate is checked at once. `new` and `insert` are the only routes in, and the `Vec` is private, so no caller can push. A rejected insert leaves the list unchanged. The JSON route goes through `#[serde(try_from = "Vec<Range<u32>>")]`, so a decoded list takes the same check. Readers get a slice, never a `&mut Vec`. From `impl Windows`:
 
 ```rust
     /// Inserts one window in its sorted place.
@@ -126,7 +137,7 @@ The whole aggregate is checked at once. `new` and `insert` are the only routes i
 - **Applies when**: acceptance depends on state outside the value. A policy, a configuration, a quota, a permission.
 - **Enough instead**: a check at the one call site, when the value never travels past it.
 
-The authority builds the admission. `Limits::admit` is the only constructor, and `Admitted` records the policy that checked it. The record says nothing about a later policy. When the policy changes, the consumer decides what happens to earlier admissions and says so in code. `KeepEarlier` serves work the old policy admitted. `Readmit` checks it again and returns what left the queue. Neither happens by accident of the type.
+The authority builds the admission. `Limits::admit` is the only constructor, and `Admitted` records the policy that checked it. The record says nothing about a later policy. When the policy changes, the consumer decides what happens to earlier admissions and says so in code. `KeepEarlier` serves work the old policy admitted. `Readmit` checks it again and returns what left the queue. Neither happens by accident of the type. From `impl Limits`:
 
 ```rust
     /// Admits `request` under this policy, or says why not.
@@ -147,6 +158,8 @@ The authority builds the admission. `Limits::admit` is the only constructor, and
         })
     }
 ```
+
+From `impl Queue`:
 
 ```rust
     /// Replaces the policy. What happens to earlier admissions is `on_change`, chosen by the caller.
@@ -174,7 +187,7 @@ The authority builds the admission. `Limits::admit` is the only constructor, and
 - **Applies when**: input arrives as bytes, JSON, a query string, or a database row, and a decoder can build the type.
 - **Enough instead**: one `TryFrom<Raw>` with no raw type, when only one route exists and serde is not on it.
 
-Parsing structure and validating meaning are two steps. serde checks that the fields exist and have the right types, and builds a `RawHeader`. `Header::try_from` checks what the fields mean. `Header` derives `Deserialize` through `#[serde(try_from = "RawHeader")]`, so the JSON route cannot skip the second step. The byte route builds a `RawHeader` and takes the same step.
+Parsing structure and validating meaning are two steps. serde checks that the fields exist and have the right types, and builds a `RawHeader`. `Header::try_from` checks what the fields mean. `Header` derives `Deserialize` through `#[serde(try_from = "RawHeader")]`, so the JSON route cannot skip the second step. The byte route builds a `RawHeader` and takes the same step. From `impl Header`:
 
 ```rust
     /// Decodes the fixed prefix of a frame.
@@ -220,7 +233,7 @@ impl TryFrom<RawHeader> for Header {
 - **Applies when**: an operation on a refined type can leave the refined set, or can fail for a reason the invariant does not cover.
 - **Enough instead**: a plain operator with a comment that states the bound that makes it safe.
 
-Nonzero survives negation, so `checked_neg` returns `Option<Self>` and not `Option<i32>`. Nonzero does not remove overflow, so the `Option` stays. `magnitude` returns a `NonZeroU32` because the distance of a nonzero value is nonzero, and `i32::MIN` fits. `sign` is total because zero is excluded. The return types say what is true, and no more.
+Nonzero survives negation, so `checked_neg` returns `Option<Self>` and not `Option<i32>`. Nonzero does not remove overflow, so the `Option` stays. `magnitude` returns a `NonZeroU32` because the distance of a nonzero value is nonzero, and `i32::MIN` fits. `sign` is total because zero is excluded. The return types say what is true, and no more. From `impl Offset`:
 
 ```rust
     /// The distance, which is nonzero because the offset is. `i32::MIN` fits: its magnitude is `2^31`.
@@ -246,7 +259,7 @@ Nonzero survives negation, so `checked_neg` returns `Option<Self>` and not `Opti
 - **Applies when**: a consumer needs to know what changed. An event, a log line, a reply, a cascade.
 - **Enough instead**: a `bool` or a count, when no consumer needs the removed items.
 
-`remove_group` holds the state while it runs, so it alone knows which members left with the group. The outcome carries them. A lookup after the call finds nothing, or a new group under the same id. The event is built from the outcome. `#[must_use]` with a reason stops a caller from dropping it.
+`remove_group` holds the state while it runs, so it alone knows which members left with the group. The outcome carries them. A lookup after the call finds nothing, or a new group under the same id. The event is built from the outcome. `#[must_use]` with a reason stops a caller from dropping it. From `impl Registry`:
 
 ```rust
     /// Removes `group` and every member in it. The outcome says which members those were.
@@ -304,7 +317,7 @@ impl JobStatus {
 - **Applies when**: a stored type gains a stricter check. A config file, a snapshot, a database column, a wire message.
 - **Enough instead**: a version bump with no migration, when no file of the old version exists and none can arrive.
 
-Version 1 stored `workers: 0` to mean "one per core". Version 2 writes `"auto"` and rejects zero. `load` reads both. A version 1 zero becomes `Workers::Auto`, so the meaning is kept and not rounded to one. The tests hold the historical bytes, the migrated meaning, the stricter rejection, and a corrupt input.
+Version 1 stored `workers: 0` to mean "one per core". Version 2 writes `"auto"` and rejects zero. `load` reads both. A version 1 zero becomes `Workers::Auto`, so the meaning is kept and not rounded to one. The tests hold the historical bytes, the migrated meaning, the stricter rejection, and a corrupt input. From `impl TryFrom<Stored> for Config`:
 
 ```rust
     fn try_from(stored: Stored) -> Result<Self, LoadError> {
@@ -325,6 +338,8 @@ Version 1 stored `workers: 0` to mean "one per core". Version 2 writes `"auto"` 
         Ok(Self { workers })
     }
 ```
+
+From the tests:
 
 ```rust
     /// A file written by a version 1 build. The bytes must keep loading as long as version 1 is supported.

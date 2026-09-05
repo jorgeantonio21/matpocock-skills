@@ -40,7 +40,7 @@ impl Concurrency {
     #[must_use]
     pub const fn new(value: u32) -> Option<Self> {
         match NonZeroU32::new(value) {
-            Some(value) => Some(Self(value)),
+            Some(nonzero) => Some(Self(nonzero)),
             None => None,
         }
     }

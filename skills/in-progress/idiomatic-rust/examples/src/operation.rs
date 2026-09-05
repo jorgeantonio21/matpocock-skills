@@ -24,7 +24,7 @@ impl Offset {
     #[must_use]
     pub const fn new(value: i32) -> Option<Self> {
         match NonZeroI32::new(value) {
-            Some(value) => Some(Self(value)),
+            Some(nonzero) => Some(Self(nonzero)),
             None => None,
         }
     }
