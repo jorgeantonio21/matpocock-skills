@@ -14,7 +14,7 @@ Read this file when you are about to write an impl by hand that a crate would de
   pub struct JobId(u64);
   ```
 
-- **`strum` 0.28.** Use `#[derive(VariantArray, EnumCount, EnumString, Display)]` on a unit enum instead of a hand-written `ALL` array, a `COUNT` const, or a match-table `FromStr`. Use `VariantArray`, which is a `'static` slice. Do not use `EnumIter`, which allocates an iterator struct. `ParseError` carries no payload, so it is hot-path safe.
+- **`strum` 0.28.** Use `#[derive(VariantArray, EnumCount, EnumString, Display)]` on a unit enum instead of a hand-written `ALL` array, a `COUNT` const, or a match-table `FromStr`. Use `VariantArray`, which is a `'static` slice, when a slice is enough. `EnumIter` builds a small iterator struct on the stack, with no heap allocation, so use it when the caller wants an iterator. `ParseError` carries no payload, so it is hot-path safe.
 
   ```rust
   #[derive(Clone, Copy, Debug, PartialEq, Eq)] // std
