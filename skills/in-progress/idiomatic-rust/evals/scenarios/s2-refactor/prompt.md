@@ -1,0 +1,1 @@
+Make this crate idiomatic. Keep the behaviour that the tests pin: you may change signatures and update the tests to match new signatures, but a test must not change what it checks. `cargo test` must pass when you finish. Write the code you would put in a pull request.
