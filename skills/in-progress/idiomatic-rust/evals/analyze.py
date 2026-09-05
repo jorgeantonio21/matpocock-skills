@@ -1,26 +1,33 @@
 #!/usr/bin/env python3
-"""Read the stream-json transcripts under results/.
+"""Read the transcripts and scores under results/.
 
 Usage:
   analyze.py summary [results-dir]
       One line per run: exit, wall time, turns, cost, model, the skill files it
       read, and whether it ran the check command and fmt.
-  analyze.py meta OUT STATUS STARTED FINISHED ARM SCENARIO MODEL
+  analyze.py matrix [results-dir]
+      One Markdown row per scenario and arm over every run of it: how many runs, how
+      many passed their own tests, the external tests, and both check passes, the mean
+      wall time and cost, and the skill revision measured. Needs score.sh to have run.
+  analyze.py meta OUT STATUS STARTED FINISHED ARM SCENARIO MODEL SKILL_REVISION
       Called by run.sh after one run. Writes OUT/final-message.md and
       OUT/meta.json from OUT/transcript.jsonl.
 """
 
 import argparse
 import json
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from statistics import mean
 
 HERE = Path(__file__).resolve().parent
-SKILL_FILES = ("SKILL.md", "RUNTIME.md", "CRATES.md", "LINTS.md")
+SKILL_FILES = ("SKILL.md", "INVARIANTS.md", "RUNTIME.md", "CRATES.md", "LINTS.md")
 BRIEF_KEYS = ("command", "file_path", "pattern")
 BRIEF_WIDTH = 120
 CHECK_NEEDLES = ("clippy::pedantic", "flags=(")
 FMT_NEEDLES = ("+nightly fmt",)
+RUN_GLOB = "*/*/r*"
 
 
 @dataclass
@@ -59,7 +66,7 @@ class Transcript:
             name
             for call in self.tool_calls
             for name in SKILL_FILES
-            if f"idiomatic-rust/{name}" in call.blob
+            if f"idiomatic-rust/{name}" in call.blob or f"/{name}" in call.blob
         }
         return sorted(read)
 
@@ -93,14 +100,22 @@ def parse_transcript(path: Path) -> Transcript:
     return transcript
 
 
+def run_dirs(results: Path) -> list[Path]:
+    """Every results/<scenario>/<arm>/r<N> directory, in name order."""
+    return sorted(path for path in results.glob(RUN_GLOB) if path.is_dir())
+
+
 def print_summary(results: Path) -> None:
-    """One line per run under results/, in scenario then arm order."""
+    """One line per run under results/, in scenario, arm, then run order."""
     print(
-        f"{'scenario':14} {'arm':6} {'exit':4} {'wall':>5} {'turns':>5} {'cost':>6}  "
+        f"{'scenario':14} {'arm':20} {'run':4} {'exit':4} {'wall':>5} {'turns':>5} {'cost':>6}  "
         "model, skill files read, check, fmt"
     )
-    for path in sorted(results.glob("*/*/transcript.jsonl")):
-        scenario, arm = path.parts[-3:-1]
+    for run in run_dirs(results):
+        path = run / "transcript.jsonl"
+        if not path.is_file():
+            continue
+        scenario, arm = run.parts[-3:-1]
         transcript = parse_transcript(path)
         result = transcript.result
         models = [
@@ -111,9 +126,70 @@ def print_summary(results: Path) -> None:
         turns = result.get("num_turns", "")
         cost = result.get("total_cost_usd", 0) or 0
         print(
-            f"{scenario:14} {arm:6} {exit_word:4} {wall:>5} {turns!s:>5} {cost:6.2f}  "
+            f"{scenario:14} {arm:20} {run.name:4} {exit_word:4} {wall:>5} {turns!s:>5} {cost:6.2f}  "
             f"{models} read={transcript.skill_files_read()} "
             f"check={transcript.ran(CHECK_NEEDLES)} fmt={transcript.ran(FMT_NEEDLES)}"
+        )
+
+
+def load_json(path: Path) -> dict:
+    """The parsed file, or an empty dict when it is missing."""
+    if not path.is_file():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def passed(scores: list[dict], key: str, verdicts: tuple[str, ...]) -> str:
+    """How many scores have one of `verdicts` under `key`, as `hits/total`."""
+    if not scores:
+        return "unscored"
+    hits = sum(score.get(key, {}).get("verdict") in verdicts for score in scores)
+    return f"{hits}/{len(scores)}"
+
+
+def print_matrix(results: Path) -> None:
+    """One Markdown row per scenario and arm, aggregated over its runs."""
+    groups: dict[tuple[str, str], list[Path]] = defaultdict(list)
+    for run in run_dirs(results):
+        scenario, arm = run.parts[-3:-1]
+        groups[(scenario, arm)].append(run)
+    print(
+        "| scenario | arm | runs | own tests | external | check lib | check all "
+        "| check ran | mean wall s | mean cost $ | skill revision |"
+    )
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for (scenario, arm), runs in sorted(groups.items()):
+        metas = [
+            meta for meta in (load_json(run / "meta.json") for run in runs) if meta
+        ]
+        scores = [
+            score for score in (load_json(run / "score.json") for run in runs) if score
+        ]
+        if not metas:
+            print(f"| {scenario} | {arm} | {len(runs)} | no meta.json | | | | | | | |")
+            continue
+        walls = [meta.get("wall_seconds", 0) for meta in metas]
+        costs = [meta.get("total_cost_usd") or 0 for meta in metas]
+        check_ran = sum(
+            parse_transcript(run / "transcript.jsonl").ran(CHECK_NEEDLES)
+            for run in runs
+            if (run / "transcript.jsonl").is_file()
+        )
+        revisions = sorted(
+            {
+                (run / "skill-revision.txt").read_text(encoding="utf-8").strip()[:12]
+                for run in runs
+                if (run / "skill-revision.txt").is_file()
+            }
+        )
+        print(
+            f"| {scenario} | {arm} | {len(runs)} "
+            f"| {passed(scores, 'tests', ('pass',))} "
+            f"| {passed(scores, 'external', ('pass', 'none'))} "
+            f"| {passed(scores, 'check_lib', ('clean',))} "
+            f"| {passed(scores, 'check_all', ('clean',))} "
+            f"| {check_ran}/{len(runs)} | {mean(walls):.0f} | {mean(costs):.2f} "
+            f"| {', '.join(revisions) or 'none'} |"
         )
 
 
@@ -126,6 +202,7 @@ def write_meta(args: argparse.Namespace) -> None:
         "scenario": args.scenario,
         "arm": args.arm,
         "model": args.model,
+        "skill_revision": args.skill_revision,
         "exit_status": args.status,
         "wall_seconds": args.finished - args.started,
         "num_turns": transcript.result.get("num_turns"),
@@ -147,25 +224,34 @@ def main() -> None:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    summary = commands.add_parser("summary", help="one line per run under results/")
-    summary.add_argument("results", nargs="?", type=Path, default=HERE / "results")
+    for name, help_text in (
+        ("summary", "one line per run under results/"),
+        ("matrix", "one Markdown row per scenario and arm over its runs"),
+    ):
+        command = commands.add_parser(name, help=help_text)
+        command.add_argument("results", nargs="?", type=Path, default=HERE / "results")
 
     meta = commands.add_parser(
         "meta", help="write final-message.md and meta.json for one run"
     )
     meta.add_argument(
-        "out", type=Path, help="the run's results/<scenario>/<arm> directory"
+        "out", type=Path, help="the run's results/<scenario>/<arm>/r<N> directory"
     )
     meta.add_argument("status", type=int, help="the claude process exit status")
     meta.add_argument("started", type=int, help="epoch seconds when the run started")
     meta.add_argument("finished", type=int, help="epoch seconds when the run finished")
-    meta.add_argument("arm", help="bare or skill")
+    meta.add_argument("arm", help="bare, skill, or skill@<git-ref>")
     meta.add_argument("scenario", help="the scenario name")
     meta.add_argument("model", help="the model passed to run.sh, or 'default'")
+    meta.add_argument(
+        "skill_revision", help="the commit the skill arm loaded, or 'none' for bare"
+    )
 
     args = parser.parse_args()
     if args.command == "summary":
         print_summary(args.results)
+    elif args.command == "matrix":
+        print_matrix(args.results)
     else:
         write_meta(args)
 

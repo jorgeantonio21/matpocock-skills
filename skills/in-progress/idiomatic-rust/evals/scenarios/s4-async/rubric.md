@@ -18,4 +18,4 @@ Mark each row `bare`, `skill`, `both`, or `neither`. Most rows come from `RUNTIM
 | 12 | Words: Logs are structured | Per-job output goes through one place; `println!` only where stdout is the product (the summary in `main`), or `tracing` for the rest | | |
 | 13 | Words: Tests read as sentences | `test_` prefix, `#[tokio::test(start_paused = true)]` with `tokio::time::advance`, no real sleep, values in the assert message | | |
 | 14 | Correctness | Ctrl-c during a run still prints a summary with every submitted job counted once; the queue drains before the summary in the normal path | | |
-| 15 | Check | `score.sh`: tests pass, the check command reports zero findings in both runs (the `print_stdout` relaxation applies to this binary) | | |
+| 15 | Check | `score.sh`: tests pass, the check command reports zero findings in both runs (`check-flags` relaxes `print_stdout` in both passes: the summary is this binary's stdout) | | |
