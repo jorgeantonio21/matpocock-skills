@@ -105,7 +105,7 @@ impl Store {
 mod tests {
     use super::*;
 
-    const LEASE: Duration = Duration::from_secs(60);
+    const LEASE: Duration = Duration::from_mins(1);
 
     fn store() -> Store {
         Store::new(Config { lease: LEASE })
@@ -118,9 +118,9 @@ mod tests {
         let t0 = Instant::now();
         let id = store.open(t0);
         let session = store.get(id).expect("the session was just opened");
-        // expiry = t0 + 60s
+        // expiry = t0 + 60s; one second before it the session is live
         assert_eq!(session.expires_at(), t0 + LEASE);
-        assert!(!session.is_expired(t0 + LEASE - Duration::from_secs(1)));
+        assert!(!session.is_expired(t0 + Duration::from_secs(59)));
         assert!(session.is_expired(t0 + LEASE));
     }
 
