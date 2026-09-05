@@ -294,9 +294,27 @@ pub fn remove_and_announce(registry: &mut Registry, group: GroupId) -> Option<Gr
 - **Applies when**: several modules interpret the same enum. Metrics, a scheduler, an archive, a reply.
 - **Enough instead**: a local `matches!`, when one consumer exists and the enum is private to it.
 
-The policy lives on the type that owns the status. The `match` names every variant, so a new variant fails the build until the policy decides it. A `_` arm would give the new variant a silent default.
+The policy lives on the type that owns the status. The `match` names every variant, so a new variant fails the build until the policy decides it. A `_` arm would give the new variant a silent default. `Failed` carries a `bool`, and the two literal patterns `retryable: false` and `retryable: true` together cover it.
 
 ```rust
+/// Where a job is in its life.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum JobStatus {
+    /// Waiting for a worker.
+    Queued,
+    /// On a worker.
+    Running,
+    /// Finished with a result.
+    Succeeded,
+    /// Finished with an error.
+    Failed {
+        /// Whether the scheduler queues the job again.
+        retryable: bool,
+    },
+    /// Stopped by the owner.
+    Cancelled,
+}
+
 impl JobStatus {
     /// Whether the job is finished for good. Every consumer that counts finished jobs asks here.
     #[must_use]
