@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 You don't remember every skill, so ask.
 
-A **flow** is a path through the skills. Most paths run along one **main flow**, and two **on-ramps** merge onto it. Everything else is standalone, or a vocabulary layer that runs underneath.
+A **flow** is a path through the skills. Most paths run along one **main flow**, and two **on-ramps** merge onto it. Everything else is standalone, or a reference layer (vocabulary and baselines) that runs underneath.
 
 ## The main flow: idea → ship
 
@@ -25,9 +25,13 @@ The route most work travels. You have an idea and want it built.
 
    Either way, the build skill drives **`/tdd`** internally, one red-green slice at a time, then closes out by running **`/code-review`**, a two-axis review (Standards + Spec) of the diff, before committing. **`/implement`** commits at the end of each ticket; **`/implement-by-plan`** agrees the commit sequence up front, then lands it unattended; **`/implement-by-commit`** pauses for approval before every commit. Reach for **`/tdd`** on its own when you just want to build a concrete behaviour test-first without a full spec, and **`/code-review`** on its own whenever you want to review a branch or PR against a fixed point.
 
+   **`/full-review`** is the four-axis version of that review: Standards and Spec by running `/code-review` unchanged, plus **Bugs** proven by running them in a throwaway worktree and **Craft** with the idiomatic rewrite attached to each finding. It writes one verdict file, **blocked** or **clean**, with the blocking findings (a proven bug, a test that cannot fail, a spec miss, a breach of a documented standard) apart from the advisory ones, and it never ranks one axis against another. Reach for it on its own when you want a branch or PR reviewed for defects and idiom as well as standards and spec, and accept that it costs more agent time than `/code-review`. The pair skills below run it at every commit.
+
    **Branch: how much do you want to review?** `/implement` lands a ticket as one diff and commits at the end. **`/implement-by-commit`** plans the ticket as a sequence of commits instead, each green and reviewable on its own, and stops at a **gate** before every one: it presents the diff and a suggested message, you approve, it commits, then it takes the next. **`/implement-by-plan`** builds the same commit sequence with the gates removed: you review the plan once, before any code exists, then the run goes unattended to the last commit, stopping only if the work proves the plan wrong. Same `/tdd` inside and the same `/code-review` at the close, whichever you pick. Reach for `/implement-by-commit` when catching a wrong turn at commit two beats catching it at the end; for `/implement-by-plan` when you want a history a reviewer can walk commit by commit but you won't sit at the gates to get it; for `/implement` when the resulting history matters to nobody.
 
-   None of the three opens a pull request; each ends at commits on the branch you are on. When the work ships as a PR, **`/open-pr`** is the step after the build: it rescues commits stranded on `main` onto a properly named branch, asks which repo and base the PR targets, drafts the body from the diff alone, and stops at one **gate** before anything outward-facing happens.
+   **Branch: one agent or two?** All three of those build and review inside the window you are in. **`/pair-by-commit`** and **`/pair-by-plan`** run the same two commit loops with two agents on the job. An `implementer` agent builds each commit of the agreed plan, test-first, and lands it as a **provisional commit**: on the branch, at the top, amendable until its gate opens. **`/full-review`** then checks it on four axes, and every blocking finding goes back to the implementer for a fix and an amend, two rounds at most, before the commit reaches you. You orchestrate and write no code. `/pair-by-commit` keeps the gates of `/implement-by-commit`: you open every one, with the review beside the code and `git show HEAD` as the thing to read. `/pair-by-plan` makes a clean verdict the gate, as `/implement-by-plan` does: you agree the plan once, with the branch and every open decision in it, because nothing else gets a human eye until close-out, then the run goes unattended and stops only on **drift** or on a blocker that survives two rounds. Both close with a whole-sequence review, and neither applies an advisory finding without you. Reach for a pair skill when you want the bugs proven and the idiom judged before you look, and for the single-agent skill when the diff is small enough that your own read at the gate is the review.
+
+   None of the five opens a pull request; each ends at commits on the branch you are on. When the work ships as a PR, **`/open-pr`** is the step after the build: it rescues commits stranded on `main` onto a properly named branch, asks which repo and base the PR targets, drafts the body from the diff alone, and stops at one **gate** before anything outward-facing happens.
 
 ### Context hygiene
 
@@ -62,6 +66,13 @@ Two model-invoked references that run *beneath* the other skills, each the singl
 - **`/domain-modeling`**: sharpen the project's *domain* language: challenge a fuzzy term, resolve an overloaded word ("account" doing three jobs), record a hard-to-reverse decision as an ADR. It's the active discipline `/grill-with-docs` drives to keep `CONTEXT.md` a clean glossary.
 - **`/codebase-design`**: the deep-module vocabulary (module, interface, depth, seam, adapter, leverage, locality) for designing a module's *shape*: a lot of behaviour behind a small interface at a clean seam. `/tdd` and `/improve-codebase-architecture` both speak it.
 
+## Baselines underneath
+
+Two more model-invoked references, each a list of rules a diff is judged against rather than a vocabulary. The `implementer`, `bug-hunter`, and `craft-reviewer` agents carry them, so `/full-review` and the pair skills apply them without being asked. Reach for one directly when you want its rules applied to the code in front of you, with no flow around it.
+
+- **`/pragmatic-programming`**: the tips from _The Pragmatic Programmer_ cut down to the ones a diff can be judged against, in four sections: **Bugs** (prove it, crash early, contracts, resources, shared state), **Craft** (DRY, tell don't ask, design to test, naming), **Design** (easier to change, no fortune-telling, decoupling), and **Building** (tracer bullets, small steps). Every entry is a labelled judgement call, never a hard violation. Where a tip overlaps a `/code-review` smell, the smell is reported once, under Standards, so a review running both never says the same thing twice.
+- **`/idiomatic-rust`**: the Rust rules a linter cannot enforce, each an instruction with its reason, in the order an author decides things: Shape, Errors, Ownership, Flow, Surface, Words. Beside it sit the clippy check command it runs on every crate a diff touches, the async and hot-path idiom, and a short optional set of crates that remove hand-written impls. The `implementer` and `craft-reviewer` agents read it on any diff that touches `.rs` or `Cargo.toml`. Reach for it yourself when you write, refactor, or review Rust with no pair flow around it. A documented standard in the repo overrides it.
+
 ## Phase boundaries
 
 A **phase** is a chunk of work inside a session: the grilling, the implementation, the QA. At the **boundary** between two of them you have five options, and picking between them is the fuzziest decision in this whole map:
@@ -92,3 +103,5 @@ Off the main flow entirely.
 ## Precondition
 
 **`/setup-matt-pocock-skills`**: run before your first engineering flow to configure the issue tracker, triage labels, and doc layout the other skills assume. Custom issue trackers also work.
+
+**The agents behind the pair flow**: `/full-review`, `/pair-by-commit`, and `/pair-by-plan` spawn the `implementer`, `bug-hunter`, and `craft-reviewer` agents, which live beside the skills rather than inside them. Install them into the harness before the first run (in this fork, `scripts/link-agents.sh` symlinks them). Those three skills and the two baselines are **in progress**: public on purpose, installed directly rather than through the plugin, and free to change.
