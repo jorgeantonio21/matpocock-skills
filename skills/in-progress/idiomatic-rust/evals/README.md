@@ -46,7 +46,7 @@ Each scenario folder holds `prompt.md`, identical for every arm, and a `start/` 
 ./analyze.py matrix                 # one Markdown row per scenario and arm over its runs
 ```
 
-`check.sh` is the gate before a paid run. It builds `examples/` and runs the `LINTS.md` check on it. It checks that every Rust block in `INVARIANTS.md` is a verbatim excerpt of a module there. It checks that every `start/` passes its own tests and the check, so a run's findings are the agent's. And it checks that each scenario's external tests fail on `start/` and pass on `reference/`.
+`check.sh` is the gate before a paid run. It builds `examples/` and runs the `LINTS.md` check on it. It checks that every Rust block in `SKILL.md`, `INVARIANTS.md`, `RUNTIME.md`, and `CRATES.md` is a verbatim excerpt of a module there, so every snippet the skill shows compiles, passes a test, and passes the check. It checks that every `start/` passes its own tests and the check, so a run's findings are the agent's. And it checks that each scenario's external tests fail on `start/` and pass on `reference/`.
 
 `run.sh` copies `start/` to a throwaway directory under `/tmp/idiomatic-rust-eval/` and runs the agent there with all permissions granted. It then writes `results/<scenario>/<arm>/r<N>/`, where `N` is one more than the runs of that arm so far:
 

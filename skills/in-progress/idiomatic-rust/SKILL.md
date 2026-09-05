@@ -50,10 +50,11 @@ Decide the error types with the domain types.
   #[must_use = "a rejection must reach the caller"]
   pub enum CancelOutcome { Cancelled { attempts: Retries }, Rejected(RejectReason) }
 
-  pub fn cancel(&mut self, id: JobId) -> Result<CancelOutcome, SchedulerError> {
-      let Some(job) = self.jobs.get_mut(&id) else {
-          return Ok(CancelOutcome::Rejected(RejectReason::UnknownJob));
-      };
+  impl Scheduler {
+      pub fn cancel(&mut self, id: JobId) -> Result<CancelOutcome, SchedulerError> {
+          let Some(job) = self.jobs.get_mut(&id) else {
+              return Ok(CancelOutcome::Rejected(RejectReason::UnknownJob));
+          };
   ```
 
 - **Library errors use `thiserror`.** In a library crate, derive the error type with `#[derive(thiserror::Error, Debug)]`. Define one error enum per fallible surface. In a large crate, that is an operation or a module. In a small crate, it is the whole crate. A caller can then match on exactly the failures of the operation it called. Give each variant the data a caller needs to act on it. Examples: the id, the path, the offset, the expected and actual values. Do not format a message into a `String` field. Write the message with `#[error("...")]` and name the fields in it. Write the message in lowercase with no trailing period, as std does. A chained report then reads as one sentence per cause. Define a single-variant error as a struct, not as a one-variant enum. Derive `Copy` on an error that lives on a hot path, and keep `String` and `Box` out of it. An error at the edge or in a tool can carry a `String` path or a boxed cause.
@@ -85,7 +86,7 @@ Decide the error types with the domain types.
 
   pub type Result<T> = std::result::Result<T, DecodeError>;
 
-  pub fn header(bytes: &[u8]) -> Result<Header> { /* .. */ }
+  pub fn header(bytes: &[u8]) -> Result<Header> {
   ```
 
 - **Application errors use `anyhow`.** In a binary crate and in tests, return `anyhow::Result<T>`. In a library crate, `anyhow` is a dev-dependency. Add context at each layer where the lower message is not enough on its own: `.context("load the service config")?` or `.with_context(|| format!("read {path}"))?`. Do not return `anyhow::Error` from a library function. Do not use `Box<dyn Error>`, `String`, or `()` as an error type in any signature. Do not mix the two conventions in one crate's public interface.

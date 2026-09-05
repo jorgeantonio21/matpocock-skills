@@ -2,7 +2,8 @@
 # The checks that need no model run. Everything here must hold before a paid run means anything.
 #
 # 1. examples/ compiles, passes its tests, passes the LINTS.md check in both passes, and is
-#    rustfmt-clean. Every Rust block in INVARIANTS.md is a verbatim excerpt of a module there.
+#    rustfmt-clean. Every Rust block in SKILL.md, INVARIANTS.md, RUNTIME.md, and CRATES.md is a
+#    verbatim excerpt of a module there.
 # 2. Every scenario's start/ passes its own tests and the check in both passes, so a run's
 #    findings are the agent's and not the fixture's. A scenario that plants lint-caught patterns
 #    on purpose says so in an expect-start-findings file, and its start/ skips the check.
@@ -73,7 +74,9 @@ external_passes() {
 
 echo "== examples/"
 check_crate "$skill_dir/examples" lint
-python3 "$here/snippets.py" "$skill_dir/INVARIANTS.md" "$skill_dir/examples/src" || fail "INVARIANTS.md snippets"
+python3 "$here/snippets.py" "$skill_dir/examples/src" \
+  "$skill_dir/SKILL.md" "$skill_dir/INVARIANTS.md" "$skill_dir/RUNTIME.md" "$skill_dir/CRATES.md" ||
+  fail "a Rust block in the guidance files is not an excerpt of examples/"
 
 if (($# > 0)); then
   scenarios=("$@")

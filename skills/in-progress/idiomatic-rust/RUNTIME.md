@@ -9,8 +9,8 @@ Rules for async tasks, OS threads, and the boundary between them. Follow them to
   ```rust
   tokio::select! {
       biased;
-      _ = cancel.cancelled() => return,
-      _ = tokio::time::sleep(backoff) => {}
+      () = cancel.cancelled() => return,
+      () = tokio::time::sleep(backoff) => {}
   }
   ```
 
@@ -20,12 +20,15 @@ Rules for async tasks, OS threads, and the boundary between them. Follow them to
 
   ```rust
   let stop = Arc::new(AtomicBool::new(false));
-  tokio::spawn({
+  let watcher = tokio::spawn({
       let stop = Arc::clone(&stop);
       async move { cancel.cancelled().await; stop.store(true, Ordering::Relaxed); }
   });
   // In the hot loop, once per drained batch:
-  if stop.load(Ordering::Relaxed) { break; }
+  loop {
+      drain_batch(&mut queue);
+      if stop.load(Ordering::Relaxed) { break; }
+  }
   ```
 
 - **Share without a lock.** On the hot path there is no lock (see "No lock on the hot path"). Pick the sharing structure in this order. Give the state one owner and send it messages. Partition the state so each thread owns a shard. Publish an immutable snapshot with `arc_swap::ArcSwap`, which many readers load and one writer replaces. Use an atomic for a flag, a counter, or one small value: `AtomicBool`, `AtomicU64`, `AtomicUsize`. Use a wait-free or lock-free structure. A wait-free operation completes in a bounded number of steps whatever the other threads do, and a lock-free operation guarantees that some thread makes progress. An SPSC ring such as `rtrb` between two dedicated threads is wait-free on push and pop. `crossbeam::queue::ArrayQueue` (bounded) and `SegQueue` (unbounded) are lock-free when several threads produce. Do not assume a channel or a concurrent map is lock-free inside. `crossbeam-channel` and `flume` take a lock or park a thread on some operations, and `dashmap` shards a lock. Read the crate's documentation for the operation you call. A structure that can lock or park stays off the hot path. At the edge, a short lock is a normal choice, and the order above is a preference, not a rule.
@@ -47,7 +50,7 @@ Rules for async tasks, OS threads, and the boundary between them. Follow them to
       .name(format!("drain-{queue_name}"))
       .spawn(move || {
           if let Some(core) = config.core_id { core_affinity::set_for_current(core); }
-          drain(queue, stop)
+          drain(queue, stop);
       })?;
   ```
 
