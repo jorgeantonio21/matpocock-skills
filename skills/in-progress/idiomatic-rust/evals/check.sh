@@ -9,6 +9,7 @@
 #    on purpose says so in an expect-start-findings file, and its start/ skips the check.
 # 3. For every scenario with verify/tests/: the external tests do not pass on start/ (the planted
 #    defect, or the API the prompt asks for, is missing) and pass on reference/.
+# 4. score.sh gives the verdicts test_score.py pins, against a stub cargo.
 #
 # usage: check.sh [scenario...]   (every scenario by default)
 set -euo pipefail
@@ -77,6 +78,14 @@ check_crate "$skill_dir/examples" lint
 python3 "$here/snippets.py" "$skill_dir/examples/src" \
   "$skill_dir/SKILL.md" "$skill_dir/INVARIANTS.md" "$skill_dir/RUNTIME.md" "$skill_dir/CRATES.md" ||
   fail "a Rust block in the guidance files is not an excerpt of examples/"
+
+echo "== score.sh"
+if output=$(python3 "$here/test_score.py" 2>&1); then
+  echo "test_score.py passes against the stub cargo"
+else
+  echo "$output" >&2
+  fail "test_score.py"
+fi
 
 if (($# > 0)); then
   scenarios=("$@")

@@ -37,7 +37,7 @@ Each scenario folder holds `prompt.md`, identical for every arm, and a `start/` 
 ## Running
 
 ```bash
-./check.sh                          # no model: examples compile, snippets match, fixtures are clean, external tests catch and pass
+./check.sh                          # no model: examples compile, snippets match, score.sh verdicts hold, fixtures are clean, external tests catch and pass
 ./run.sh s6-decoder bare            # one arm, one run; a second call adds r2 beside r1
 ./run.sh s6-decoder skill
 ./run.sh s6-decoder skill@9fe7b17   # the merged skill, for a three-arm comparison
@@ -46,7 +46,7 @@ Each scenario folder holds `prompt.md`, identical for every arm, and a `start/` 
 ./analyze.py matrix                 # one Markdown row per scenario and arm over its runs
 ```
 
-`check.sh` is the gate before a paid run. It builds `examples/` and runs the `LINTS.md` check on it. It checks that every Rust block in `SKILL.md`, `INVARIANTS.md`, `RUNTIME.md`, and `CRATES.md` is a verbatim excerpt of a module there, so every snippet the skill shows compiles, passes a test, and passes the check. It checks that every `start/` passes its own tests and the check, so a run's findings are the agent's. And it checks that each scenario's external tests fail on `start/` and pass on `reference/`.
+`check.sh` is the gate before a paid run. It builds `examples/` and runs the `LINTS.md` check on it. It checks that every Rust block in `SKILL.md`, `INVARIANTS.md`, `RUNTIME.md`, and `CRATES.md` is a verbatim excerpt of a module there, so every snippet the skill shows compiles, passes a test, and passes the check. It checks that every `start/` passes its own tests and the check, so a run's findings are the agent's. It runs `test_score.py`, which drives `score.sh` with a stub `cargo` and pins each verdict. And it checks that each scenario's external tests fail on `start/` and pass on `reference/`.
 
 `run.sh` copies `start/` to a throwaway directory under `/tmp/idiomatic-rust-eval/` and runs the agent there with all permissions granted. It then writes `results/<scenario>/<arm>/r<N>/`, where `N` is one more than the runs of that arm so far:
 
@@ -59,7 +59,7 @@ Each scenario folder holds `prompt.md`, identical for every arm, and a `start/` 
 - `meta.json`: exit status, wall time, turns, cost, and one line per tool call.
 - `score.json` and `score.log`: written by `score.sh`.
 
-`score.sh` runs on the copied trees. It reads the check flags from the `flags=( ... )` block in `LINTS.md` (through `flags.sh`, shared with `check.sh`), so the lint set is written once, and appends the scenario's `check-flags` to both passes. Per run it reports the crate's own tests, the external tests (run on a scratch copy, so the tree stays as the agent left it), the check in both passes, the non-blank line count, the lines added and removed against `start/`, and the dependencies added. A tree that does not compile scores `BUILD FAILED`. A run where cargo fails before it produces a diagnostic (no toolchain, a broken manifest, a dependency that did not download) scores `INCOMPLETE`. Neither is reported as zero findings or as a pass: a Cargo stub that exits with only stderr reproduces the `INCOMPLETE` row.
+`score.sh` runs on the copied trees. It reads the check flags from the `flags=( ... )` block in `LINTS.md` (through `flags.sh`, shared with `check.sh`), so the lint set is written once, and appends the scenario's `check-flags` to both passes. Per run it reports the crate's own tests, the external tests (run on a scratch copy, so the tree stays as the agent left it), the check in both passes, the non-blank line count, the lines added and removed against `start/`, and the dependencies added. A tree that does not compile scores `BUILD FAILED`. A run where cargo fails before it produces a diagnostic (no toolchain, a broken manifest, a dependency that did not download), stops before its `build-finished` line, or exits with a status its diagnostics do not explain scores `INCOMPLETE`. Neither is reported as zero findings or as a pass. `test_score.py` runs `score.sh` against a stub `cargo` that answers with a chosen stdout, stderr, and exit status, and pins every verdict, including the `print_stdout` relaxation in both passes.
 
 Two environment variables adjust a run. `EVAL_WORK_ROOT` moves the throwaway directory (default `/tmp/idiomatic-rust-eval`). `EVAL_LIMIT_SECONDS` caps one run's wall time (default 2400). The `s4-async` skill arm took 26 minutes on 2026-09-04, so the cap is not generous.
 

@@ -5,8 +5,10 @@
 # meta.json, which `analyze.py matrix` aggregates, and cargo's own output goes to score.log.
 #
 # A run that does not compile scores BUILD FAILED. A run where cargo itself fails before it
-# produces any diagnostic (no toolchain, a broken manifest, a dependency that did not download)
-# scores INCOMPLETE. Neither is ever reported as zero findings or zero failures.
+# produces any diagnostic (no toolchain, a broken manifest, a dependency that did not download),
+# stops before its build-finished line, or exits with a status its diagnostics do not explain
+# scores INCOMPLETE. Neither is ever reported as zero findings or zero failures. test_score.py
+# runs this script against a stub cargo and pins those verdicts.
 #
 # usage: score.sh <scenario>
 set -euo pipefail
@@ -80,15 +82,25 @@ classify_tests() {
 lints() {
   # lints <tree> <log> [clippy args...]: sets `text` to "N (lint a, lint b, ...)" from the JSON
   # messages, "BUILD FAILED (rustc errors: n)" when rustc reports an error that is not a lint, or
-  # "INCOMPLETE (cargo exited n)" when cargo fails without a single diagnostic, and `verdict`.
-  # A tree that does not compile, or a scorer that cannot run, then never scores as clean.
+  # "INCOMPLETE (...)" when the run cannot be read as a lint result, and `verdict`. A tree that
+  # does not compile, or a scorer that cannot run, then never scores as clean.
   local tree=$1 log=$2
   shift 2
-  local messages status=0 errors findings
+  local messages status=0 errors finished denied findings
   # Under -D warnings the exit status is non-zero for a lint finding too, so the messages, not
   # the status alone, tell a build failure from a finding.
   messages=$(cd "$tree" && cargo clippy --no-deps --all-features --message-format=json "$@" \
     2>>"$log") || status=$?
+  # cargo writes one JSON object per line. Anything else (nothing at all, a wrapper's text, a
+  # stream cut mid-line) is not a lint result.
+  if [[ -z $messages ]] ||
+    ! jq -es 'all(.[]; type == "object")' <<<"$messages" >/dev/null 2>&1; then
+    verdict=incomplete
+    text="INCOMPLETE (no compiler JSON; cargo exited $status; see score.log)"
+    return
+  fi
+  jq -r 'select(.reason == "compiler-message") | .message.rendered // empty' <<<"$messages" \
+    >>"$log"
   errors=$(jq -rs '
     [ .[] | select(.reason == "compiler-message") | .message
       | select(.level == "error")
@@ -102,16 +114,35 @@ lints() {
     text="BUILD FAILED (rustc errors: $errors)"
     return
   fi
+  # A complete run ends with a build-finished line, and its exit status agrees with that line:
+  # zero after a success, non-zero after a failure that a denied lint explains. Anything else
+  # was cut short, or failed for a reason the diagnostics do not show.
+  finished=$(jq -r 'select(.reason == "build-finished") | .success' <<<"$messages" | tail -n 1)
+  denied=$(jq -rs '
+    [ .[] | select(.reason == "compiler-message") | .message
+      | select(.level == "error" and .code != null)
+    ] | length' <<<"$messages")
+  if [[ -z $finished ]]; then
+    verdict=incomplete
+    text="INCOMPLETE (no build-finished line; cargo exited $status; see score.log)"
+    return
+  fi
+  if { [[ $finished == true ]] && ((status != 0)); } ||
+    { [[ $finished == false ]] && ((status == 0)); }; then
+    verdict=incomplete
+    text="INCOMPLETE (build-finished $finished but cargo exited $status; see score.log)"
+    return
+  fi
+  if [[ $finished == false ]] && ((denied == 0)); then
+    verdict=incomplete
+    text="INCOMPLETE (the build failed and no diagnostic says why; see score.log)"
+    return
+  fi
   findings=$(jq -r 'select(.reason == "compiler-message") | .message | select(.code != null) | .code.code' \
     <<<"$messages" | sort | uniq -c | sort -rn)
   if [[ -z $findings ]]; then
-    if ((status != 0)); then
-      verdict=incomplete
-      text="INCOMPLETE (cargo exited $status; see score.log)"
-    else
-      verdict=clean
-      text="0 ()"
-    fi
+    verdict=clean
+    text="0 ()"
     return
   fi
   verdict=findings
