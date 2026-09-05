@@ -4,7 +4,7 @@
 
 It recommends and stops. It does not grill, write a [spec](https://www.aihero.dev/ai-coding-dictionary/spec), open a file or fire the skill it just named; what you get back is the next thing to type, and you type it.
 
-It exists beside [ask-matt](https://aihero.dev/skills-ask-matt): the same hand-written map, extended with the skills this fork adds on top of upstream. In the promoted set those are `implement-by-commit`, [implement-by-plan](https://aihero.dev/skills-implement-by-plan), and `open-pr`. In the in-progress bucket they are the two-agent `pair-by-commit` and `pair-by-plan` loops, the four-axis `full-review` they gate on, and the `pragmatic-programming` and `idiomatic-rust` baselines the agents behind them apply. The fork keeps `ask-matt` itself byte-identical to upstream so merges never conflict on it, which makes `/ask-jorge` the one to type here: `ask-matt`'s map does not know the fork's skills exist.
+It exists beside [ask-matt](https://aihero.dev/skills-ask-matt): the same hand-written map, extended with the skills this fork adds on top of upstream. In the promoted set those are `implement-by-commit`, [implement-by-plan](https://aihero.dev/skills-implement-by-plan), and `open-pr`. In the in-progress bucket they are the two-agent `pair-by-commit` and `pair-by-plan` loops, the four-axis `full-review` they gate on, and the `pragmatic-programming`, `idiomatic-rust`, and `idiomatic-typescript` baselines the agents behind them apply. The fork keeps `ask-matt` itself byte-identical to upstream so merges never conflict on it, which makes `/ask-jorge` the one to type here: `ask-matt`'s map does not know the fork's skills exist.
 
 ## When to reach for it
 
@@ -21,7 +21,7 @@ You invoke this by typing `/ask-jorge`; the agent won't reach for it on its own.
 
 ## Prerequisites
 
-The router names skills; it does not install them. Everything it points at has to be installed for the recommendation to be actionable. It knows the promoted skills in this fork plus the fork's own in-progress ones (the pair loops, `full-review`, and the two baselines), which the plugin does not ship: install those directly, and link the three agents behind the pair flow (`implementer`, `bug-hunter`, `craft-reviewer`) into the harness before the first run.
+The router names skills; it does not install them. Everything it points at has to be installed for the recommendation to be actionable. It knows the promoted skills in this fork plus the fork's own in-progress ones (the pair loops, `full-review`, and the three baselines), which the plugin does not ship: install those directly, and link the three agents behind the pair flow (`implementer`, `bug-hunter`, `craft-reviewer`) into the harness before the first run.
 
 The tracker-dependent routes (triage, `to-spec`, `to-tickets`, `implement`) assume [setup-matt-pocock-skills](https://aihero.dev/skills-setup-matt-pocock-skills) has already configured an issue tracker in the repo. The router will happily recommend them before that has happened.
 
@@ -32,13 +32,17 @@ The word the skill gives you to think with is **flow**: a path *through* the ski
 - **The main flow**, idea to ship. Grill, spec, tickets, implement (or implement-by-plan to agree the commit sequence up front, or implement-by-commit when a human reviews each commit, or the pair-by-plan and pair-by-commit versions of those two, where an implementer agent builds and full-review gates), review, then open-pr when the work ships as a pull request. Two branches sit inside it: a prototype detour when a question needs runnable code to settle, and the spec-and-tickets split, which only earns its cost when the build spans more than one session.
 - **On-ramps**, for a situation that generates work and then merges onto the main flow: incoming bug reports, something broken, or an effort too foggy and too large to hold in one session.
 - **Standalones**, off every flow, reached for on their own terms: the prototype, the questionnaire, the merge conflict you are already sitting in.
-- **A reference layer underneath**: the two vocabulary references the other skills pull in when the words rather than the process are the problem, and the two rule baselines (pragmatic-programming, idiomatic-rust) the build and review agents judge a diff against.
+- **A reference layer underneath**: the two vocabulary references the other skills pull in when the words rather than the process are the problem, and the three rule baselines (pragmatic-programming, idiomatic-rust, idiomatic-typescript) the build and review agents judge a diff against. The TypeScript baseline is framework-neutral and separates compiler guarantees from runtime checks; React guidance remains a separate follow-up.
 
 ## Common questions
 
 **Why not just use `/ask-matt`?**
 
 In this fork, `ask-matt` is deliberately frozen to upstream's version so that upstream merges never conflict on it, which means its map ends at upstream's skill set. Ask it about reviewing a build commit by commit, pairing an implementer agent with a reviewer, a review that proves its bugs by running them, or shipping a branch as a pull request, and it routes you to `/implement` or `/code-review` because it has never heard of the alternatives. `ask-jorge` is the same map with the fork's skills drawn in.
+
+**Does the TypeScript baseline cover React?**
+
+No. It applies framework-neutral TypeScript rules inside `.tsx`, but React component design, state patterns, framework conventions, and deployment guidance belong to a separate React skill.
 
 **It described a skill's behaviour, and the skill doesn't do that.**
 
@@ -49,6 +53,7 @@ A known failure inherited from `ask-matt`: the router answers from its own one-l
 - It ends by naming what to type and stops there, instead of starting the work itself.
 - The route it gives back mentions where to clear or compact context and where you are expected to review, not just a list of skill names.
 - Asked about commit-by-commit review, a two-agent build, a review that proves its bugs, or opening a pull request, it names the fork's skills rather than routing around them.
+- Asked for TypeScript idiom or validation-boundary guidance, it names `idiomatic-typescript` and keeps React-specific design separate.
 - You recognise your own situation in what it hands back, rather than the nearest generic scenario.
 
 ## Where it fits
