@@ -1,6 +1,6 @@
 # Invariants
 
-Read this file when you decide what a type guarantees, or when you review a type that claims a guarantee. Each pattern states the guarantee, the invalid behavior it prevents, when it applies, and what is enough in a simpler case. Follow it together with [SKILL.md](SKILL.md). Every snippet is an excerpt of a module in [`examples/`](examples/), which compiles, passes its tests, and passes the check in [LINTS.md](LINTS.md) on Rust 1.97.1. `evals/check.sh` fails when a snippet and its module differ.
+Read this file when you decide what a type guarantees, or when you review a type that claims a guarantee. Each pattern states the guarantee, the invalid behavior it prevents, when it applies, and what is enough in a simpler case. Follow it together with [SKILL.md](SKILL.md). Every snippet is an excerpt of a module in [`examples/`](examples/), which compiles, passes its tests, and passes the check in [LINTS.md](LINTS.md) on Rust 1.97.1; `evals/check.sh` fails when a snippet and its module differ.
 
 ## Three kinds of guarantee
 
@@ -12,15 +12,13 @@ Name the kind before you pick the machinery. Each kind is established in a diffe
 | Aggregate invariant | An ordered set of non-overlapping ranges | Validation of the whole aggregate, and mutation only through the type | A decoder that fills the collection directly, or an exposed `&mut` |
 | Contextual admission | A request accepted under a policy | The authority that holds the policy at the time of the check | A later change to the policy or the state the check read |
 
-An intrinsic invariant is true of the value alone, so the type can carry it forever. An aggregate invariant is true of the elements together, so every mutation must re-establish it. A contextual admission is true at one moment against one policy. The type records the admission. It does not prove that the value passes a later policy.
-
 ## When a wrapper is not the answer
 
-Introduce a newtype when it protects an invariant, separates two roles a caller can confuse, or carries behavior. Keep the primitive when the wrapper adds none of the three. A `usize` count with no bound, a `String` message, and a `Duration` stay as they are. A wrapper that only renames a primitive costs a conversion at every boundary and protects nothing.
+A newtype earns its place when it protects an invariant, separates two roles a caller can confuse, or carries behavior. A `usize` count with no bound, a `String` message, and a `Duration` stay as they are: a wrapper that only renames a primitive costs a conversion at every boundary and protects nothing.
 
-Module privacy and a narrow constructor are enough for most guarantees. A private field with one checked `new` closes every route a caller has. Reach for a phantom type, a branded lifetime, a version token, or a non-`Copy` handle only when a named bug survives the private field. Say which bug in the doc comment.
+Module privacy and a narrow constructor are enough for most guarantees: a private field with one checked `new` closes every route a caller has. A phantom type, a branded lifetime, a version token, or a non-`Copy` handle answers a named bug that survives the private field, and the doc comment says which bug.
 
-A stricter representation must keep every valid behavior of the domain, including a supported exception. Do not round, drop, or reinterpret a valid input to make it fit a stronger type. When a rule has an exception, put the exception in the type or in the constructor, and test it.
+A stricter representation keeps every valid behavior of the domain, including a supported exception. A valid input is never rounded, dropped, or reinterpreted to fit a stronger type; the exception lives in the type or in the constructor, and a test covers it.
 
 ## The patterns
 
@@ -31,7 +29,7 @@ A stricter representation must keep every valid behavior of the domain, includin
 - **Applies when**: the invariant is a property of the value alone. Nonzero, a bounded range, a valid UTF-8 name, an aligned size.
 - **Enough instead**: a `NonZeroU32` field with no wrapper, when no operation or route needs a name of its own.
 
-The representation carries the invariant. Every route in goes through `new`: `TryFrom`, `FromStr`, and `Deserialize` through `#[serde(try_from = "u32")]`. A delegating `FromStr` derive or a plain `Deserialize` derive would build the value without `new`. An operation returns `Self` only when it preserves the invariant, so `halve` stops at one.
+The representation carries the invariant, and every route in goes through `new`: `TryFrom`, `FromStr`, and `Deserialize` through `#[serde(try_from = "u32")]`, since a delegating `FromStr` derive or a plain `Deserialize` derive would build the value without `new`. An operation returns `Self` only when it preserves the invariant, so `halve` stops at one.
 
 ```rust
 /// The number of jobs a pool runs at once. Never zero: a zero limit blocks every job forever.
@@ -40,8 +38,6 @@ The representation carries the invariant. Every route in goes through `new`: `Tr
 #[serde(try_from = "u32", into = "u32")]
 pub struct Concurrency(NonZeroU32);
 ```
-
-Inside `impl Concurrency`, `Self` is `Concurrency`, so `new` returns `Option<Concurrency>`: `Some(Concurrency(nonzero))` for a nonzero input, `None` for zero.
 
 ```rust
 impl Concurrency {
@@ -74,17 +70,6 @@ impl Concurrency {
 }
 ```
 
-```rust
-impl FromStr for Concurrency {
-    type Err = ParseConcurrencyError;
-
-    fn from_str(text: &str) -> Result<Self, ParseConcurrencyError> {
-        let value: u32 = text.parse()?;
-        Ok(Self::try_from(value)?)
-    }
-}
-```
-
 ### Aggregate invariant
 
 - **Guarantee**: the windows are sorted, and no two overlap.
@@ -92,7 +77,7 @@ impl FromStr for Concurrency {
 - **Applies when**: the invariant is a relationship between elements. Sorted, unique, non-overlapping, balanced, a total that matches a sum.
 - **Enough instead**: a `BTreeSet` or a `BTreeMap`, when the standard collection already holds the relationship.
 
-The whole aggregate is checked at once. `new` and `insert` are the only routes in, and the `Vec` is private, so no caller can push. A rejected insert leaves the list unchanged. The JSON route goes through `#[serde(try_from = "Vec<Range<u32>>")]`, so a decoded list takes the same check. Readers get a slice, never a `&mut Vec`. From `impl Windows`:
+The whole aggregate is checked at once. `new` and `insert` are the only routes in, the `Vec` is private, and a rejected insert leaves the list unchanged. The JSON route goes through `#[serde(try_from = "Vec<Range<u32>>")]`, so a decoded list takes the same check, and readers get a slice, never a `&mut Vec`. From `impl Windows`:
 
 ```rust
     /// Inserts one window in its sorted place.
@@ -137,7 +122,7 @@ The whole aggregate is checked at once. `new` and `insert` are the only routes i
 - **Applies when**: acceptance depends on state outside the value. A policy, a configuration, a quota, a permission.
 - **Enough instead**: a check at the one call site, when the value never travels past it.
 
-The authority builds the admission. `Limits::admit` is the only constructor, and `Admitted` records the policy that checked it. The record says nothing about a later policy. When the policy changes, the consumer decides what happens to earlier admissions and says so in code. `KeepEarlier` serves work the old policy admitted. `Readmit` checks it again and returns what left the queue. Neither happens by accident of the type. From `impl Limits`:
+The authority builds the admission: `Limits::admit` is the only constructor, and `Admitted` records the policy that checked it and says nothing about a later one. When the policy changes, the consumer decides in code what happens to earlier admissions: `KeepEarlier` serves work the old policy admitted, `Readmit` checks it again and returns what left the queue. Neither happens by accident of the type. From `impl Limits`:
 
 ```rust
     /// Admits `request` under this policy, or says why not.
@@ -187,7 +172,7 @@ From `impl Queue`:
 - **Applies when**: input arrives as bytes, JSON, a query string, or a database row, and a decoder can build the type.
 - **Enough instead**: one `TryFrom<Raw>` with no raw type, when only one route exists and serde is not on it.
 
-Parsing structure and validating meaning are two steps. serde checks that the fields exist and have the right types, and builds a `RawHeader`. `Header::try_from` checks what the fields mean. `Header` derives `Deserialize` through `#[serde(try_from = "RawHeader")]`, so the JSON route cannot skip the second step. The byte route builds a `RawHeader` and takes the same step. From `impl Header`:
+Parsing structure and validating meaning are two steps. serde checks that the fields exist with the right types and builds a `RawHeader`; `Header::try_from` checks what the fields mean. `Header` derives `Deserialize` through `#[serde(try_from = "RawHeader")]`, so the JSON route cannot skip the second step, and the byte route builds a `RawHeader` and takes the same step. From `impl Header`:
 
 ```rust
     /// Decodes the fixed prefix of a frame.
@@ -233,7 +218,7 @@ impl TryFrom<RawHeader> for Header {
 - **Applies when**: an operation on a refined type can leave the refined set, or can fail for a reason the invariant does not cover.
 - **Enough instead**: a plain operator with a comment that states the bound that makes it safe.
 
-Nonzero survives negation, so `checked_neg` returns `Option<Self>` and not `Option<i32>`. Nonzero does not remove overflow, so the `Option` stays. `magnitude` returns a `NonZeroU32` because the distance of a nonzero value is nonzero, and `i32::MIN` fits. `sign` is total because zero is excluded. The return types say what is true, and no more. From `impl Offset`:
+Nonzero survives negation but not overflow, so `checked_neg` returns `Option<Self>`, not `Option<i32>`. `magnitude` returns a `NonZeroU32` because the distance of a nonzero value is nonzero and `i32::MIN` fits; `sign` is total because zero is excluded. The return types say what is true, and no more. From `impl Offset`:
 
 ```rust
     /// The distance, which is nonzero because the offset is. `i32::MIN` fits: its magnitude is `2^31`.
@@ -259,7 +244,7 @@ Nonzero survives negation, so `checked_neg` returns `Option<Self>` and not `Opti
 - **Applies when**: a consumer needs to know what changed. An event, a log line, a reply, a cascade.
 - **Enough instead**: a `bool` or a count, when no consumer needs the removed items.
 
-`remove_group` holds the state while it runs, so it alone knows which members left with the group. The outcome carries them. A lookup after the call finds nothing, or a new group under the same id. The event is built from the outcome. `#[must_use]` with a reason stops a caller from dropping it. From `impl Registry`:
+`remove_group` holds the state while it runs, so it alone knows which members left with the group, and the outcome carries them; a lookup after the call finds nothing, or a new group under the same id. The event is built from the outcome, and `#[must_use]` with a reason stops a caller from dropping it. From `impl Registry`:
 
 ```rust
     /// Removes `group` and every member in it. The outcome says which members those were.
@@ -274,19 +259,6 @@ Nonzero survives negation, so `checked_neg` returns `Option<Self>` and not `Opti
     }
 ```
 
-```rust
-/// Removes `group` and builds the event from the outcome, the one record of what was removed.
-pub fn remove_and_announce(registry: &mut Registry, group: GroupId) -> Option<GroupRemoved> {
-    match registry.remove_group(group) {
-        RemoveOutcome::Removed {
-            members,
-            groups_left: _,
-        } => Some(GroupRemoved { group, members }),
-        RemoveOutcome::Rejected(RejectReason::UnknownGroup(_)) => None,
-    }
-}
-```
-
 ### Shared interpretation
 
 - **Guarantee**: every consumer applies the same policy to a status, because the policy has one definition.
@@ -294,7 +266,7 @@ pub fn remove_and_announce(registry: &mut Registry, group: GroupId) -> Option<Gr
 - **Applies when**: several modules interpret the same enum. Metrics, a scheduler, an archive, a reply.
 - **Enough instead**: a local `matches!`, when one consumer exists and the enum is private to it.
 
-The policy lives on the type that owns the status. The `match` names every variant, so a new variant fails the build until the policy decides it. A `_` arm would give the new variant a silent default. `Failed` carries a `bool`, and the two literal patterns `retryable: false` and `retryable: true` together cover it.
+The policy lives on the type that owns the status, and the `match` names every variant, so a new variant fails the build until the policy decides it; a `_` arm would give it a silent default. `Failed` carries a `bool`, and the two literal patterns `retryable: false` and `retryable: true` together cover it.
 
 ```rust
 /// Where a job is in its life.
@@ -335,7 +307,7 @@ impl JobStatus {
 - **Applies when**: a stored type gains a stricter check. A config file, a snapshot, a database column, a wire message.
 - **Enough instead**: a version bump with no migration, when no file of the old version exists and none can arrive.
 
-Version 1 stored `workers: 0` to mean "one per core". Version 2 writes `"auto"` and rejects zero. `load` reads both. A version 1 zero becomes `Workers::Auto`, so the meaning is kept and not rounded to one. The tests hold the historical bytes, the migrated meaning, the stricter rejection, and a corrupt input. From `impl TryFrom<Stored> for Config`:
+Version 1 stored `workers: 0` to mean "one per core"; version 2 writes `"auto"` and rejects zero. `load` reads both, and a version 1 zero becomes `Workers::Auto`, so the meaning is kept and not rounded to one. The tests hold the historical bytes, the migrated meaning, the stricter rejection, and a corrupt input. From `impl TryFrom<Stored> for Config`:
 
 ```rust
     fn try_from(stored: Stored) -> Result<Self, LoadError> {
@@ -374,11 +346,11 @@ From the tests:
 
 ## Review questions
 
-Ask these of every type in a diff that claims a guarantee. Name the question on the finding.
+Ask these of every type in a diff that claims a guarantee, and name the question on the finding.
 
 1. **Which kind is it?** Intrinsic, aggregate, or contextual. A contextual admission presented as an intrinsic invariant is the most common overclaim.
-2. **Is every route closed?** List `new`, `From`, `TryFrom`, `FromStr`, `Deserialize`, each byte decoder, each database read, `Default`, each setter, and each arithmetic operation. A private field closes none of the derived ones.
-3. **Does every operation preserve it?** An operation that can leave the refined set returns `Option` or `Result`. An independent failure such as overflow stays visible.
+2. **Is every route closed?** `new`, `From`, `TryFrom`, `FromStr`, `Deserialize`, each byte decoder, each database read, `Default`, each setter, each arithmetic operation. A private field closes none of the derived ones.
+3. **Does every operation preserve it?** An operation that can leave the refined set returns `Option` or `Result`, and an independent failure such as overflow stays visible.
 4. **Does the outcome carry the facts?** A consumer builds its event from the return value, not from a second lookup.
-5. **Does the stricter type keep every valid behavior?** Old data, a supported exception, and work admitted under an earlier policy load and run as before. A test holds the historical bytes.
-6. **Is the machinery the smallest that closes the bug?** A private field and one constructor first. A phantom type, a branded lifetime, or a version token only for a bug that survives them, named in the doc comment.
+5. **Does the stricter type keep every valid behavior?** Old data, a supported exception, and work admitted under an earlier policy load and run as before, and a test holds the historical bytes.
+6. **Is the machinery the smallest that closes the bug?** A private field and one constructor first; a phantom type, a branded lifetime, or a version token only for a bug that survives them, named in the doc comment.

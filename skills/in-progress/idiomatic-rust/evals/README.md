@@ -99,6 +99,16 @@ The revision (`INVARIANTS.md`, the corrected constructors and derives, the conte
 
 Promotion is a decision on that evidence: fewer external-test failures and fewer wrong review findings at a cost the owner accepts, not more rule citations.
 
+## Lint calibration
+
+The evidence behind the lint set in `LINTS.md`. The commands were run on 2026-09-04 against Rust 1.97.1 (clippy 0.1.97), and every lint in the set resolves on that toolchain; `LINTS.md` holds the name check to repeat after a toolchain bump.
+
+Three flags changed as a result of the first run. `module_name_repetitions` is not in the `-A` list, because it is a `restriction` lint since 1.93 and relaxing it under pedantic is a no-op. `mem_forget` is not in the `-D` picks: in a workspace with zero-copy wire types, every one of its findings came from a serialization derive expansion and none from hand-written code, and the lint does not skip external macros. `-A clippy::inline_always` was added, because a low-latency workspace had 110 deliberate uses in one crate.
+
+On a scratch crate, the first command passes an iterator-chain function, fails with `clippy::unwrap-used` on a `parse().unwrap()` in library code, and ignores test code. The second command passes a test module that holds an `unwrap()` and an `assert!` inside a `Result`-returning test. `panic_in_result_fn` fires on `assert!` and `panic!`, not on `debug_assert!` or `unreachable!`. A `clippy.toml` with `allow-unwrap-in-tests` clears the test `unwrap` but not `panic_in_result_fn`, so a config file cannot replace the second run.
+
+On a 40-crate workspace that never ran pedantic, the shipped set reported 254 findings in a small primitives crate. The top three there: `doc_markdown` 51, `cast_lossless` 46, `missing_errors_doc` 35. The largest domain crate reported 407. The top four there: `missing_errors_doc` 65, `doc_markdown` 65, `expect_used` 53, `unwrap_used` 46. `expect_used` was in the set at the time. Each crate took under ten seconds once the dependencies were built. Without `--no-deps`, the run failed on two findings in a proc-macro crate in the build graph before it reached the named crate. The two binaries of the largest crate carried 82 `print_stdout` findings, which is the case the `-A clippy::print_stdout` relaxation is for. Those counts are why the check is diff-scoped. The backlog filter in `LINTS.md` printed 17 findings for one changed file.
+
 ## Caveats
 
 The 2026-09-04 results are one run per arm per scenario, so a single run's choices (the `Clock` trait, the `SegQueue`) may not repeat. That is what the `r<N>` layout and the matrix are for. A weaker model would show a larger gap on the mechanical rows. The skill arms' prompt carries one extra line: "Follow the idiomatic-rust skill ... including its Check step". That line is the cost of having the skill, not a confound.
