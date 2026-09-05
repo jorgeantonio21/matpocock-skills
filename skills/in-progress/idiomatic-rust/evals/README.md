@@ -87,7 +87,7 @@ Keep four questions apart, because a run can win one and lose another. Did the e
 
 ### Harness and fixture changes since that run (2026-09-05)
 
-Results moved from `results/<scenario>/<arm>/` to `results/<scenario>/<arm>/r<N>/`, and `score.sh` gained the external tests, the diff stats, and the `INCOMPLETE` verdict. Two fixtures changed. `s1-ratelimit`'s empty `lib.rs` gained a newline, so `rustfmt --check` passes on it. `s3-extend`'s tests carried two findings of the check command (`duration_suboptimal_units` and `unchecked_time_subtraction`) that the answer key never planted. They are fixed, so a run's findings there are now the agent's. The 2026-09-04 numbers for `s3` include those two findings in the bare arm.
+Results moved from `results/<scenario>/<arm>/` to `results/<scenario>/<arm>/r<N>/`, and `score.sh` gained the external tests, the diff stats, and the `INCOMPLETE` verdict. Two fixtures changed. `s1-ratelimit`'s empty `lib.rs` gained a newline, so `rustfmt --check` passes on it. `s3-extend`'s tests carried two findings of the check command (`duration_suboptimal_units` and `unchecked_time_subtraction`) that the answer key never planted. They are fixed, so a run's findings there are now the agent's. The 2026-09-04 numbers for `s3` include those two findings in the bare arm. `s4-async` gained a `check-flags` file, so the `print_stdout` relaxation its rubric names is applied in both passes.
 
 ### Not yet run: the revision in this tree
 
