@@ -2,7 +2,9 @@
 
 Seven scenarios compare identical prompts and pinned fixtures in `bare`, working-tree `skill`, and committed `skill@<git-ref>` arms. The suite measures correctness, review false positives, API and dependency churn, changed lines, and cost. More rule citations are not a success metric.
 
-The fixtures pin TypeScript 5.9.3 and Node 25.6.1. `fixtures/base/` owns the shared package, runtime pin, and compiler configuration. `run.sh` overlays only a scenario's `start/` and exposes a skill copy without `examples/` or `evals/`, so acceptance tests and reference solutions remain outside every directory the agent can read.
+The fixtures pin TypeScript 5.9.3 and Node 25.6.1. `fixtures/base/` owns the shared package, runtime pin, and compiler configuration. `run.sh` overlays only a scenario's `start/` and exposes a skill copy without `examples/` or `evals/`. Acceptance tests and reference solutions stay outside the agent's task directory and the supplied guidance copy.
+
+This is layout separation, not a filesystem sandbox. `run.sh` bypasses harness permissions, so the original repository remains readable elsewhere on the host. Here, **hidden** means withheld from the supplied task fixtures, not inaccessible. Evaluations that require access isolation need an external sandbox that withholds the original repository.
 
 ## Scenarios
 
@@ -12,7 +14,7 @@ The fixtures pin TypeScript 5.9.3 and Node 25.6.1. `fixtures/base/` owns the sha
 | `s2-state-lookup` | Extend state and sparse lookup | Failed state works, absence stays explicit, and invalid state shapes fail typecheck |
 | `s3-generic-api` | Tighten a small public generic | Exact key inference and rejected non-key callbacks |
 | `s4-async-worker` | Implement a bounded batch | Ordering, fan-out, cancellation, limit validation, and rejection propagation |
-| `s5-package-consumers` | Repair published ESM output | Node loads emitted JavaScript and declarations typecheck |
+| `s5-package-consumers` | Repair published ESM output | Node imports the package by name; Node and bundler consumers check its exported declarations |
 | `s6-plain` | Fix one defect in a good module | Zero remains meaningful, with a minimality rubric |
 | `s7-review` | Review only, with valid alternatives mixed in | Human rubric counts two defects, false positives, duplicates, and source edits |
 
@@ -24,9 +26,13 @@ Each implementation scenario has `prompt.md`, `rubric.md`, `start/`, `reference/
 ./check.sh
 ```
 
-The gate installs the isolated example package, runs its typecheck, runtime tests, negative diagnostic tests, compiler probes, Node and bundler consumer checks, and snippet provenance check. It then pins scorer verdicts with a stub `npm`. Every scenario start and reference must pass its own tests. Hidden acceptance tests must reject `start/` and pass `reference/`.
+The gate installs the isolated example package, runs its typecheck, runtime tests, negative diagnostic tests, compiler probes, Node and bundler consumer checks, and snippet provenance check. It then pins infrastructure verdicts with a stub `npm` and runs real-compiler regressions for script and configuration bypasses, package exports, and emitted declarations, plus matrix-output tests. Every scenario start and reference must pass its own tests. Hidden acceptance tests must reject `start/` and pass `reference/`.
 
 An install failure, compiler crash, or unexplained command exit scores `INCOMPLETE`, never clean. This separates unavailable infrastructure from a correct result.
+
+The typecheck and runtime columns report the candidate's own scripts. **External acceptance** is the independent gate: it uses a scratch copy with harness-owned scripts and a strict configuration that checks source and acceptance types even if the candidate excludes them or enables `noCheck`. The candidate's module settings, build configuration, package exports, and dependencies remain under test; its saved tree is not rewritten. Passing project scripts alone is not correctness evidence.
+
+For `s7-review`, external acceptance is `n/a`, not a passing ratio. A human must score its review rubric separately.
 
 ## Paid runs
 
@@ -63,6 +69,6 @@ EVAL_PAID_RUNS=1 ./run-invocation.sh [model]
 
 ## Implemented evidence and pending evidence
 
-As of 2026-09-05, `./check.sh` passes: 13 runtime examples, six intended negative diagnostics, seven isolated compiler probes, both consumer checks, nine snippet provenance checks, six scorer tests, seven clean starting fixtures, and six acceptance suites that reject `start/` and pass `reference/`.
+As of 2026-09-05, `./check.sh` passes: 13 runtime examples, six intended negative diagnostics, seven isolated compiler probes, both consumer checks, nine snippet provenance checks, scorer and consumer regression tests, matrix-output tests, seven clean starting fixtures, and six acceptance suites that reject `start/` and pass `reference/`.
 
 No paid bare-versus-skill comparison has run, no numeric budget has been approved, and no effectiveness or automatic-invocation claim is made yet. Those results remain the promotion gate.

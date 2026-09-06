@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Score every run of one scenario without exposing acceptance tests to the model.
+# Score saved runs in scratch copies so acceptance files stay out of the task trees.
 # usage: ./score.sh <scenario>
 set -euo pipefail
 
@@ -55,12 +55,10 @@ external() {
   fi
   scratch=$(mktemp -d)
   rsync -a --exclude node_modules --exclude dist "$tree/" "$scratch/"
-  [[ ! -d $scenario_dir/verify/tests ]] || rsync -a "$scenario_dir/verify/tests/" "$scratch/tests/"
-  [[ ! -d $scenario_dir/verify/type-tests ]] || {
-    mkdir -p "$scratch/type-tests"
-    rsync -a "$scenario_dir/verify/type-tests/" "$scratch/type-tests/"
-  }
-  if ! install_tree "$scratch" "$log"; then
+  if ! prepare_acceptance "$scenario_dir" "$scratch" >>"$log" 2>&1; then
+    external_verdict=incomplete
+    external_text="INCOMPLETE (acceptance setup; see score.log)"
+  elif ! install_tree "$scratch" "$log"; then
     external_verdict=incomplete
     external_text="INCOMPLETE (npm ci; see score.log)"
   else
@@ -69,11 +67,6 @@ external() {
     external_text=$text
   fi
   rm -rf "$scratch"
-}
-
-materialized_start() {
-  local destination=$1
-  materialize "$scenario_dir/start" "$destination"
 }
 
 dependency_names() {
@@ -131,7 +124,7 @@ score_run() {
 
   local start added removed deps loc
   start=$(mktemp -d)
-  materialized_start "$start"
+  materialize "$scenario_dir/start" "$start"
   diff_stats "$start" "$tree"
   deps=$(new_dependencies "$start" "$tree")
   rm -rf "$start"

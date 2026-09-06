@@ -35,13 +35,9 @@ external_passes() {
   local source=$1 scenario_dir=$2 tree
   tree=$(mktemp -d)
   materialize "$source" "$tree"
-  [[ ! -d $scenario_dir/verify/tests ]] || rsync -a "$scenario_dir/verify/tests/" "$tree/tests/"
-  [[ ! -d $scenario_dir/verify/type-tests ]] || {
-    mkdir -p "$tree/type-tests"
-    rsync -a "$scenario_dir/verify/type-tests/" "$tree/type-tests/"
-  }
   local status=0
-  (cd "$tree" && npm ci --ignore-scripts >/dev/null 2>&1 && npm test >/dev/null 2>&1) || status=$?
+  (prepare_acceptance "$scenario_dir" "$tree" && cd "$tree" \
+    && npm ci --ignore-scripts && npm test) >/dev/null 2>&1 || status=$?
   rm -rf "$tree"
   return "$status"
 }
@@ -51,12 +47,12 @@ if ! (cd "$skill_dir/examples" && npm ci --ignore-scripts >/dev/null && npm run 
   fail "examples"
 fi
 
-echo "== scorer"
-if output=$(python3 "$here/test_score.py" 2>&1); then
+echo "== harness regressions"
+if output=$(python3 -m unittest discover -s "$here" -p 'test_*.py' 2>&1); then
   echo "$output"
 else
   echo "$output" >&2
-  fail "test_score.py"
+  fail "harness regression tests"
 fi
 
 if (($# > 0)); then

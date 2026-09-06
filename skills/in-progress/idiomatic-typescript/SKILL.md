@@ -23,7 +23,7 @@ For a module seam or architecture decision, call the Skill tool with "codebase-d
 
 ## Shape
 
-- **Honest guarantee (requirement).** State what a type claims and what establishes that claim: compiler structure, a runtime check, or a convention. Treat assertions, brands, `readonly`, and access modifiers according to what they actually enforce. Read [INVARIANTS.md](INVARIANTS.md) whenever a type claims more than its fields show.
+- **Honest guarantee (requirement).** State what a type claims and what establishes that claim: compiler structure, a runtime check, or a convention. Treat assertions, brands, `readonly`, and access modifiers according to what they actually enforce.
 
 - **Alternatives carry their data (requirement).** Represent mutually exclusive states as a discriminated union with each variant's data on that variant. This makes invalid combinations unrepresentable to checked callers and lets a `never` check expose a new local case. Keep a plain boolean when the concept really has two values and carries no variant-specific data.
 
@@ -113,13 +113,13 @@ export function parseApiUser(input: unknown): ApiUser {
 
 - **Failure stays failure (requirement).** Do not swallow a failure into a success-shaped default unless that fallback is the documented contract. A best-effort operation owns its reporting and makes the fallback visible.
 
-- **Owned promise (requirement).** Await or return work whose completion belongs to the operation. Give deliberately detached work an explicit rejection handler and lifecycle owner. For async callbacks, cancellation, concurrency, or resources, read [RUNTIME.md](RUNTIME.md).
+- **Owned promise (requirement).** Await or return work whose completion belongs to the operation. Give deliberately detached work an explicit rejection handler and lifecycle owner.
 
 - **Observed cleanup (requirement).** Await a promise when a surrounding `catch` or `finally` must observe its rejection or completion. `return await` is correct in that control flow and remains a style choice where no surrounding scope observes it.
 
 ## Surface
 
-- **Runtime-shaped modules (requirement).** Match imports and compiler settings to the runtime, emitter, package module mode, and declared consumers. A `paths` alias does not rewrite emitted imports, and a bundler-valid extensionless import can fail in Node ESM. Read [TOOLING.md](TOOLING.md) before module or build changes.
+- **Runtime-shaped modules (requirement).** Match imports and compiler settings to the runtime, emitter, package module mode, and declared consumers.
 
 - **Type-only dependency (default).** Use type-only imports for dependencies that are genuinely erased. Preserve runtime imports and explicit side effects. Check legacy decorator metadata and the installed compiler and lint behavior before applying this mechanically.
 

@@ -18,6 +18,8 @@ scenario=$1
 arm=$2
 model=${3:-}
 here=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=materialize.sh
+source "$here/materialize.sh"
 original_skill_dir=$(cd "$here/.." && pwd)
 skill_dir=$original_skill_dir
 repo=$(git -C "$skill_dir" rev-parse --show-toplevel)
@@ -48,7 +50,7 @@ if [[ $arm == skill ]]; then
   fi
   mkdir -p "$work_root"
   skill_load_tmp=$(mktemp -d "$work_root/working-skill.XXXXXX")
-  rsync -a --exclude examples --exclude evals "$skill_dir/" "$skill_load_tmp/"
+  copy_skill "$skill_dir" "$skill_load_tmp"
   skill_dir=$skill_load_tmp
 elif [[ $arm == skill@* ]]; then
   ref=${arm#skill@}
@@ -73,8 +75,6 @@ out="$out_arm/r$run"
 work="$work_root/$scenario/$arm-r$run-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$out"
 
-# shellcheck source=materialize.sh
-source "$here/materialize.sh"
 materialize "$source" "$work"
 if ! (cd "$work" && npm ci --ignore-scripts); then
   echo "run.sh: fixture dependency installation failed before the paid run" >&2
@@ -82,6 +82,7 @@ if ! (cd "$work" && npm ci --ignore-scripts); then
 fi
 
 prompt=$(<"$here/scenarios/$scenario/prompt.md")
+# Separate task directories avoid accidental exposure, not reads elsewhere on the host.
 args=(-p --safe-mode --dangerously-skip-permissions --output-format stream-json --verbose)
 [[ -z $model ]] || args+=(--model "$model")
 if [[ $arm != bare ]]; then

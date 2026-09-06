@@ -70,10 +70,13 @@ def summary(results: Path) -> None:
         )
 
 
-def ratio(scores: list[dict], key: str, allowed: tuple[str, ...]) -> str:
+def ratio(scores: list[dict], key: str) -> str:
     if not scores:
         return "unscored"
-    return f"{sum(score.get(key, {}).get('verdict') in allowed for score in scores)}/{len(scores)}"
+    verdicts = [score.get(key, {}).get("verdict") for score in scores]
+    if all(verdict == "none" for verdict in verdicts):
+        return "n/a"
+    return f"{verdicts.count('pass')}/{len(scores)}"
 
 
 def matrix(results: Path) -> None:
@@ -88,8 +91,8 @@ def matrix(results: Path) -> None:
         changed = [score["diff"]["added"] + score["diff"]["removed"] for score in scores]
         revisions = sorted({(run / "skill-revision.txt").read_text(encoding="utf-8").strip()[:12] for run in runs if (run / "skill-revision.txt").is_file()})
         print(
-            f"| {scenario} | {arm} | {len(runs)} | {ratio(scores, 'typecheck', ('pass',))} "
-            f"| {ratio(scores, 'runtime', ('pass',))} | {ratio(scores, 'external', ('pass', 'none'))} "
+            f"| {scenario} | {arm} | {len(runs)} | {ratio(scores, 'typecheck')} "
+            f"| {ratio(scores, 'runtime')} | {ratio(scores, 'external')} "
             f"| {mean(changed) if changed else 0:.0f} | {mean([m.get('wall_seconds', 0) for m in metas]) if metas else 0:.0f} "
             f"| {mean([m.get('input_tokens', 0) for m in metas]) if metas else 0:.0f} "
             f"| {mean([m.get('output_tokens', 0) for m in metas]) if metas else 0:.0f} "

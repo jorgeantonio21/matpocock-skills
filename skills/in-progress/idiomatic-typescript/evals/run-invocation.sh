@@ -9,6 +9,8 @@ if [[ ${EVAL_PAID_RUNS:-0} != 1 ]]; then
 fi
 
 here=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=materialize.sh
+source "$here/materialize.sh"
 skill_dir=$(cd "$here/.." && pwd)
 model=${1:-}
 out="$here/.invocation-results/$(date +%Y%m%d-%H%M%S)"
@@ -18,7 +20,7 @@ failures=0
 while IFS=$'\t' read -r name expected prompt; do
   work=$(mktemp -d)
   mkdir -p "$work/.claude/skills/idiomatic-typescript"
-  rsync -a --exclude examples --exclude evals "$skill_dir/" "$work/.claude/skills/idiomatic-typescript/"
+  copy_skill "$skill_dir" "$work/.claude/skills/idiomatic-typescript"
   printf 'export const value: unknown = 1;\n' >"$work/sample.ts"
   printf 'export const value = 1;\n' >"$work/sample.js"
   printf '{"type":"module"}\n' >"$work/package.json"
