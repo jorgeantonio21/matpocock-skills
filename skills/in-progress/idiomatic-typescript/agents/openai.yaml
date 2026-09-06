@@ -1,0 +1,3 @@
+interface:
+  display_name: "Idiomatic TypeScript"
+  short_description: "Idiomatic TypeScript with honest type and runtime guarantees"

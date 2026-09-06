@@ -1,0 +1,4 @@
+ts-write	invoke	Review sample.ts for TypeScript correctness and idiom.
+ts-config	invoke	Review this TypeScript package module configuration and tsconfig.json for its Node ESM output.
+js-only	skip	Review sample.js for ordinary JavaScript readability. Do not convert it to TypeScript.
+prose	skip	Rewrite note.md for clarity. No code changes are needed.

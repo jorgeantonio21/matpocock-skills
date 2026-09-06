@@ -1,0 +1,22 @@
+{
+  "name": "idiomatic-typescript-examples",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test:runtime": "npm run build --silent && node --test runtime-tests/*.test.mjs consumers/node/consumer.mjs",
+    "test:types": "node scripts/negative-types.mjs",
+    "test:probes": "node scripts/probes.mjs",
+    "test:consumers": "npm run build --silent && tsc -p consumers/node/tsconfig.json && tsc -p consumers/bundler/tsconfig.json && node consumers/node/consumer.mjs",
+    "test": "npm run typecheck && npm run test:runtime && npm run test:types && npm run test:probes && npm run test:consumers",
+    "check": "npm test && node scripts/snippets.mjs"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
