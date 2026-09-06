@@ -4,7 +4,7 @@
 
 It recommends and stops. It does not grill, write a [spec](https://www.aihero.dev/ai-coding-dictionary/spec), open a file or fire the skill it just named; what you get back is the next thing to type, and you type it.
 
-It exists beside [ask-matt](https://aihero.dev/skills-ask-matt): the same hand-written map, extended with the skills this fork adds on top of upstream. In the promoted set those are `implement-by-commit`, [implement-by-plan](https://aihero.dev/skills-implement-by-plan), and `open-pr`. In the in-progress bucket they are the two-agent `pair-by-commit` and `pair-by-plan` loops, the four-axis `full-review` they gate on, and the `pragmatic-programming`, `idiomatic-rust`, and `idiomatic-typescript` baselines the agents behind them apply. The fork keeps `ask-matt` itself byte-identical to upstream so merges never conflict on it, which makes `/ask-jorge` the one to type here: `ask-matt`'s map does not know the fork's skills exist.
+It exists beside [ask-matt](https://aihero.dev/skills-ask-matt): the same hand-written map, extended with the skills this fork adds on top of upstream. In the promoted set those are `implement-by-commit`, [implement-by-plan](https://aihero.dev/skills-implement-by-plan), and `open-pr`. In the in-progress bucket they are the two-agent `pair-by-commit` and `pair-by-plan` loops, the four-axis `full-review` they gate on, and the `pragmatic-programming`, `idiomatic-rust`, and `idiomatic-typescript` baselines the implementation workflows and the agents behind the pair flows apply. The fork keeps `ask-matt` itself byte-identical to upstream so merges never conflict on it, which makes `/ask-jorge` the one to type here: `ask-matt`'s map does not know the fork's skills exist.
 
 ## When to reach for it
 
@@ -21,7 +21,7 @@ You invoke this by typing `/ask-jorge`; the agent won't reach for it on its own.
 
 ## Prerequisites
 
-The router names skills; it does not install them. Everything it points at has to be installed for the recommendation to be actionable. It knows the promoted skills in this fork plus the fork's own in-progress ones (the pair loops, `full-review`, and the three baselines), which the plugin does not ship: install those directly, and link the three agents behind the pair flow (`implementer`, `bug-hunter`, `craft-reviewer`) into the harness before the first run.
+The router names skills; it does not install them. Everything it points at has to be installed for the recommendation to be actionable. It knows the promoted skills in this fork plus the in-progress ones it maps (`implement-spec`, the pair loops, `full-review`, and the three baselines), which the plugin does not ship: install those directly, and link the three agents behind the pair flow (`implementer`, `bug-hunter`, `craft-reviewer`) into the harness before the first run.
 
 The tracker-dependent routes (triage, `to-spec`, `to-tickets`, `implement`) assume [setup-matt-pocock-skills](https://aihero.dev/skills-setup-matt-pocock-skills) has already configured an issue tracker in the repo. The router will happily recommend them before that has happened.
 
@@ -35,6 +35,10 @@ The word the skill gives you to think with is **flow**: a path *through* the ski
 - **A reference layer underneath**: the two vocabulary references the other skills pull in when the words rather than the process are the problem, and the three rule baselines (pragmatic-programming, idiomatic-rust, idiomatic-typescript) the build and review agents judge a diff against. The TypeScript baseline is framework-neutral and separates compiler guarantees from runtime checks; React guidance remains a separate follow-up.
 
 ## Common questions
+
+**Do the implementation workflows use the same baselines as the pair workflows?**
+
+Yes. `implement`, `implement-by-commit`, and `implement-by-plan` load `pragmatic-programming` and the applicable Rust or TypeScript baseline before writing code. `implement-spec` passes those requirements to each code-writing worker, including final fixes and mergers that edit code. The three baselines remain in progress and need a separate installation even when the build workflow ships in the plugin.
 
 **Why not just use `/ask-matt`?**
 

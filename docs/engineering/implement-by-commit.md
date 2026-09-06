@@ -22,6 +22,8 @@ The cost is your attention: a five-commit plan is five stops. On work nobody but
 
 ## Prerequisites
 
+Install `pragmatic-programming` and the language baselines the target needs before starting. These baselines are in-progress skills installed separately; the promoted plugin does not include them.
+
 It commits to the branch you are on. It does not create one and does not ask, so check you are on the right branch before you start.
 
 It writes the agreed plan to `.scratch/<feature-slug>/commits.md` and ticks each commit off as it lands, in the same `.scratch/<feature-slug>/` directory [to-tickets](https://aihero.dev/skills-to-tickets) writes local tickets into.
@@ -49,6 +51,14 @@ When the work teaches it the plan was wrong (a commit that will not go green alo
 
 ## Common questions
 
+**Which coding baselines does it use?**
+
+- `pragmatic-programming` supplies the design and building principles.
+- `idiomatic-rust` applies when writing or refactoring Rust or changing `Cargo.toml`.
+- `idiomatic-typescript` applies when writing or refactoring TypeScript, including `.tsx`, `.mts`, and `.cts`, or changing TypeScript module or build configuration.
+
+The agent loads the relevant rules before writing code and runs the language baseline's checks before presenting each gate. The rules apply within the agreed scope, with repository standards and existing contracts taking precedence as each baseline specifies.
+
 **Isn't one commit per ticket the right size?**
 
 That is the rule `implement` follows, and for a small ticket it is right. This skill exists for the ticket that is one session of work but more than one idea, a size `to-tickets` produces routinely, because it sizes tickets to fit a fresh context window rather than to fit a reviewer's attention. Those two bars are not the same, and this skill is for the gap between them. If your ticket really is one idea, the plan will have one commit in it and you have just used `implement` with an extra confirmation step.
@@ -70,6 +80,8 @@ Because the message is yours. It ends at the body: no `Co-Authored-By`, no gener
 The landed commits are real work on your branch, and `commits.md` shows which ones they were. Nothing is left in a dirty worktree pretending to be finished, because the only uncommitted state that ever exists is the commit currently sitting at its gate. Pick it up later by reading the file and continuing from the first unticked line.
 
 ## It's working if
+
+- The agent loads the applicable coding baselines and reports their checks before presenting each gate.
 
 - The first thing it produces is a numbered list of commits, and it waits for you to approve the list before writing any code.
 - `.scratch/<feature-slug>/commits.md` exists, and gains a tick each time a commit lands.

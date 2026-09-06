@@ -22,6 +22,8 @@ Reach for it when you want a history a reviewer can walk one commit at a time, b
 
 ## Prerequisites
 
+Install `pragmatic-programming` and the language baselines the target needs before starting. These baselines are in-progress skills installed separately; the promoted plugin does not include them.
+
 It commits to the branch you are on. It reads that branch back to you in the plan and asks you to confirm it, but it does not create one, so a sequence of commits arrives wherever you were standing when you started.
 
 It writes the agreed plan to `.scratch/<feature-slug>/commits.md` and ticks each commit off as it lands, in the same `.scratch/<feature-slug>/` directory [to-tickets](https://aihero.dev/skills-to-tickets) writes local tickets into.
@@ -42,6 +44,14 @@ When it hits drift it stops, says which commits change and why, and re-agrees th
 
 ## Common questions
 
+**Which coding baselines does it use?**
+
+- `pragmatic-programming` supplies the design and building principles.
+- `idiomatic-rust` applies when writing or refactoring Rust or changing `Cargo.toml`.
+- `idiomatic-typescript` applies when writing or refactoring TypeScript, including `.tsx`, `.mts`, and `.cts`, or changing TypeScript module or build configuration.
+
+The agent loads the relevant rules before writing code and runs the language baseline's checks before each commit lands. The rules apply within the agreed scope, with repository standards and existing contracts taking precedence as each baseline specifies.
+
 **What stops it dropping the close-out at the end of a long run?**
 
 This is the most-reported failure on `implement`: the [agent](https://www.aihero.dev/ai-coding-dictionary/agent) implements the code, then truncates before the review and commit steps, or asks "are we done?" instead of finishing. The cause is context burial: by the end of a long build the skill's closing steps are far back in the [context window](https://www.aihero.dev/ai-coding-dictionary/context-window) with nothing re-surfacing them.
@@ -54,13 +64,15 @@ Both run start to finish without stopping. What you get here is the commit plan:
 
 **Can it work through several tickets in one run?**
 
-No. It takes one target and builds it. Sequencing a whole feature directory (spawning a [subagent](https://www.aihero.dev/ai-coding-dictionary/subagent) per ticket, walking the blocking edges) is a different job that nothing here does yet. Work tickets one at a time, in dependency order, clearing context between them, exactly as you would with `/implement`.
+It builds one target as a commit sequence. For a whole ticket graph, the in-progress `implement-spec` skill dispatches a [subagent](https://www.aihero.dev/ai-coding-dictionary/subagent) per ready ticket and merges the results onto one PR branch. Install that skill separately, or work tickets one at a time in dependency order with `/implement`.
 
 **Can it open a pull request instead of committing?**
 
 No. Like both its siblings, it commits to the current branch, and there is no PR mode. The branch line in the plan exists because that matters more here than it does with gates: nobody is watching while eight commits arrive. Confirm the branch when it asks, and open the PR yourself once the last commit is in.
 
 ## It's working if
+
+- The agent loads the applicable coding baselines and reports their checks before each commit lands.
 
 - The first thing it produces is a numbered list of commits, and it writes no code until you approve the list.
 - The plan tells you the branch it will commit to and the decisions it had to make, and you can overrule either while the code still doesn't exist.

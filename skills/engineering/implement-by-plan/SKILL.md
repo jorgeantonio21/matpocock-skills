@@ -18,6 +18,10 @@ Work from the spec, ticket, or issue passed as an argument: fetch it and read it
 
 Explore the codebase before planning. Read `CONTEXT.md` if it exists so commit messages and interface names use the project's domain vocabulary, and respect ADRs in the area you're touching.
 
+The baselines named below are in-progress prerequisites installed separately from the promoted plugin. Check that "pragmatic-programming" and the language baselines needed for this target are available before starting the build.
+
+Before drafting the plan, call the Skill tool with "pragmatic-programming" and apply the sections relevant to planning and building.
+
 ### 2. Draft the commit plan
 
 Break the target into an ordered sequence of commits.
@@ -65,9 +69,12 @@ Then write the approved plan to `.scratch/<feature-slug>/commits.md`:
 
 Work the commits in plan order, one at a time, using `/tdd` at the agreed seams. Finish the one in front of you before starting the next; writing the next commit's code early is what collapses a reviewable sequence back into one diff.
 
+Before writing or refactoring Rust or changing `Cargo.toml`, call the Skill tool with "idiomatic-rust". Before writing or refactoring TypeScript (including `.tsx`, `.mts`, and `.cts`) or changing its module or build configuration, call it with "idiomatic-typescript". Each skill is a separate call; load each once per context and follow its pointers as the work requires. Apply its rules within this commit's scope and preserve repository standards and existing contracts according to that baseline's precedence rules.
+
 Before each commit lands, run the check that would have been the user's:
 
 - Typecheck clean.
+- Run the applicable language baseline's checks and handle findings as that baseline specifies.
 - The tests covering this commit's behaviour pass, and the full suite too, where the commit touches shared code.
 - The diff is this commit's one idea and nothing else. Work belonging to a later commit stays for that commit.
 
