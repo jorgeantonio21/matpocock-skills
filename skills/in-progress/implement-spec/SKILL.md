@@ -14,6 +14,18 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 **Implementer subagents** should be run in the background where possible for **maximum concurrency**.
 
+## Baselines for code writers
+
+Include these instructions in every implementer subagent's brief, including the final review-fixes worker. A merger subagent that writes conflict-resolution code follows them too:
+
+- Before implementation, call the Skill tool with "pragmatic-programming" and apply the sections relevant to the work.
+- Before writing or refactoring Rust or changing `Cargo.toml`, call the Skill tool with "idiomatic-rust".
+- Before writing or refactoring TypeScript (including `.tsx`, `.mts`, and `.cts`) or changing its module or build configuration, call the Skill tool with "idiomatic-typescript".
+- Each skill is a separate call. Load each once in your own context and follow its pointers as the work requires; the orchestrator loading it is not enough.
+- Run the applicable language baseline's checks before handing back code. Apply its rules within the ticket or fix scope and preserve repository standards and existing contracts according to that baseline's precedence rules.
+
+Pass the skill names as context pointers, so workers load the rules themselves. These three baselines are in-progress skills installed separately from the promoted plugin; make the applicable baselines available in each worker's environment before dispatch.
+
 ## Steps
 
 1. Read the spec and tickets. Read enough to understand the task graph.

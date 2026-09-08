@@ -24,6 +24,8 @@ The same-session case is worth naming because the skill's own first line doesn't
 
 ## Prerequisites
 
+Install `pragmatic-programming` and the language baselines the target needs before starting. These baselines are in-progress skills installed separately; the promoted plugin does not include them.
+
 `implement` commits to the branch you are on. It does not create one, and it does not ask. Check you are on the branch you want the work on before you start.
 
 If the tickets came from [to-tickets](https://aihero.dev/skills-to-tickets), the tracker they live on was configured by [setup-matt-pocock-skills](https://aihero.dev/skills-setup-matt-pocock-skills). `code-review` reads the same configuration to find the originating spec at close-out.
@@ -47,6 +49,14 @@ The idea the skill runs on is the **seam**: the public boundary you observe beha
 The word "pre-agreed" is doing real work, and it is also the skill's weakest joint. Nothing inside `implement` agrees the seams. `tdd` is the skill that asks, and it refuses to write a test at an unconfirmed seam. So in practice the agreement happens either upstream in the spec, or in the first exchange of the run. If it happens nowhere, the precondition never fires and the run quietly becomes "just write the code". Naming the seams in the spec is what stops that.
 
 ## Common questions
+
+**Which coding baselines does it use?**
+
+- `pragmatic-programming` supplies the design and building principles.
+- `idiomatic-rust` applies when writing or refactoring Rust or changing `Cargo.toml`.
+- `idiomatic-typescript` applies when writing or refactoring TypeScript, including `.tsx`, `.mts`, and `.cts`, or changing TypeScript module or build configuration.
+
+The agent loads the relevant rules before writing code and runs the language baseline's checks before committing. The rules apply within the agreed scope, with repository standards and existing contracts taking precedence as each baseline specifies.
 
 **It finished, but my ticket is still open and the acceptance criteria are still unchecked.**
 
@@ -75,6 +85,8 @@ Probably the ticket is too big rather than the skill being misused. A run does c
 `#2` is resolved against whatever numbered list the agent can see, which in a fresh session may be a todo file, a checklist, or another work list rather than the configured tracker. The resolution is confident rather than fail-closed, so the mistake is not obvious until it has started. Pass the full reference, the issue URL or `owner/repo#2`, and ask it to confirm the title back before it begins.
 
 ## It's working if
+
+- The agent loads the applicable coding baselines and reports their checks before committing.
 
 - The session opens by reading the ticket or spec and restating what it will build, rather than asking you what to build.
 - You can see an actual `/tdd` invocation in the trace, not just tests appearing in the diff.

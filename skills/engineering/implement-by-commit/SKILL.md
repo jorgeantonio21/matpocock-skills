@@ -18,6 +18,10 @@ Work from the spec, ticket, or issue passed as an argument: fetch it and read it
 
 Explore the codebase before planning. Read `CONTEXT.md` if it exists so commit messages and interface names use the project's domain vocabulary, and respect ADRs in the area you're touching.
 
+The baselines named below are in-progress prerequisites installed separately from the promoted plugin. Check that "pragmatic-programming" and the language baselines needed for this target are available before starting the build.
+
+Before drafting the plan, call the Skill tool with "pragmatic-programming" and apply the sections relevant to planning and building.
+
 ### 2. Draft the commit plan
 
 Break the target into an ordered sequence of commits.
@@ -56,7 +60,11 @@ Iterate until the user approves. Then write the approved plan to `.scratch/<feat
 
 Work the first unticked commit in the plan, and only that one.
 
+Before writing or refactoring Rust or changing `Cargo.toml`, call the Skill tool with "idiomatic-rust". Before writing or refactoring TypeScript (including `.tsx`, `.mts`, and `.cts`) or changing its module or build configuration, call it with "idiomatic-typescript". Each skill is a separate call; load each once per context and follow its pointers as the work requires. Apply its rules within this commit's scope and preserve repository standards and existing contracts according to that baseline's precedence rules.
+
 Use `/tdd` at pre-agreed seams. Typecheck and run the touched test files as you go, until both are clean.
+
+Run the applicable language baseline's checks before presenting the gate.
 
 ### 5. Stop at the gate
 
