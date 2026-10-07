@@ -12,12 +12,12 @@ Before implementation, call the Skill tool with "pragmatic-programming" and appl
 
 Before writing or refactoring Rust or changing `Cargo.toml`, call the Skill tool with "idiomatic-rust". Before writing or refactoring TypeScript (including `.tsx`, `.mts`, and `.cts`) or changing its module or build configuration, call it with "idiomatic-typescript". Each skill is a separate call; load each once per context and follow its pointers as the work requires.
 
-Use /tdd where possible, at pre-agreed seams.
+Call the Skill tool with "tdd" where possible, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end.
 
 Run the applicable language baseline's checks before committing. Apply its rules within the requested scope and preserve repository standards and existing contracts according to that baseline's precedence rules.
 
-Once done, use /code-review to review the work.
+Once done, call the Skill tool with "code-review" to review the work.
 
 Commit your work to the current branch.
