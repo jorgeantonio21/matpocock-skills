@@ -18,7 +18,7 @@ Reachable only when you type them (Claude Code: `disable-model-invocation: true`
 - **[implement-spec](./implement-spec/SKILL.md)**: Implement a whole spec on one integration branch. Works the tickets as a task graph, running implementer subagents across the ready frontier for maximum concurrency, then closes out with `/code-review`.
 - **[implement-by-commit](./implement-by-commit/SKILL.md)**: Build the same work as a planned sequence of human-reviewable commits, stopping at a gate before each one so you review and approve it before it lands.
 - **[implement-by-plan](./implement-by-plan/SKILL.md)**: The same planned sequence of commits as `implement-by-commit`, with the gates removed: you approve the commit plan up front, then the whole sequence lands in one unattended run.
-- **[open-pr](./open-pr/SKILL.md)**: Ship the commits on the current branch as a pull request: repo checks first, a rescue off `main` onto a properly named branch, a body drawn from the diff alone, and one gate before anything outward-facing happens.
+- **[open-pr](./open-pr/SKILL.md)**: Ship the commits on the current branch as a pull request: repo checks first, a rescue off `main` onto a properly named branch, a body in `pr`'s shape drawn from the diff alone, and one gate before anything outward-facing happens.
 - **[wayfinder](./wayfinder/SKILL.md)**: Plan a huge chunk of work (more than one agent session can hold) as a shared map of decision tickets on the issue tracker, resolved one at a time until the way to the destination is clear.
 - **[retro](./retro/SKILL.md)**: Suggest improvements to the coding agent's environment (navigation, automated checks, coding standards, steering files, tooling) after a session, most severe first.
 
