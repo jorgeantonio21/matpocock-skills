@@ -8,13 +8,13 @@ disable-model-invocation: true
 
 You don't remember every skill, so ask.
 
-A **flow** is a path through the skills. Most paths run along one **main flow**, and two **on-ramps** merge onto it. Everything else is standalone, or a reference layer (vocabulary and baselines) that runs underneath.
+A **flow** is a path through the skills. Most paths run along one **main flow**, and three **on-ramps** merge onto it. Everything else is standalone, or a reference layer (vocabulary and baselines) that runs underneath.
 
 ## The main flow: idea → ship
 
 The route most work travels. You have an idea and want it built.
 
-1. **`/grill-with-docs`**: sharpen the idea by interview. Start here whenever you are **working in a working directory**: it's stateful, retaining what it learns in `CONTEXT.md` and ADRs. (No working directory? Use `/grill-me`; see Standalone. Both run the same `/grilling` primitive; `grill-with-docs` is the one that leaves a paper trail, which makes it the better of the two whenever a repo is there to leave it in.)
+1. **`/grill-with-docs`**: sharpen the idea by interview. Start here whenever you are **working in a working directory**: it's stateful, retaining what it learns in `GLOSSARY.md` and ADRs. (No working directory? Use `/grill-me`; see Standalone. Both run the same `/grilling` primitive; `grill-with-docs` is the one that leaves a paper trail, which makes it the better of the two whenever a repo is there to leave it in.)
 2. **Branch: can you settle every question in conversation?** If a question needs a runnable answer (state, business logic, a UI you have to see), detour through a prototype, bridged by **`/handoff`** in both directions (a prototype lives in its own directory, which is exactly what `/handoff` is for; see Phase boundaries):
    - **`/handoff`** out, then open a fresh session against that file,
    - **`/prototype`** to answer the question with throwaway code,
@@ -31,13 +31,15 @@ The route most work travels. You have an idea and want it built.
 
    **Branch: one agent or two?** All three of those build and review inside the window you are in. **`/pair-by-commit`** and **`/pair-by-plan`** run the same two commit loops with two agents on the job. An `implementer` agent builds each commit of the agreed plan, test-first, and lands it as a **provisional commit**: on the branch, at the top, amendable until its gate opens. **`/full-review`** then checks it on four axes, and every blocking finding goes back to the implementer for a fix and an amend, two rounds at most, before the commit reaches you. You orchestrate and write no code. `/pair-by-commit` keeps the gates of `/implement-by-commit`: you open every one, with the review beside the code and `git show HEAD` as the thing to read. `/pair-by-plan` makes a clean verdict the gate, as `/implement-by-plan` does: you agree the plan once, with the branch and every open decision in it, because nothing else gets a human eye until close-out, then the run goes unattended and stops only on **drift** or on a blocker that survives two rounds. Both close with a whole-sequence review, and neither applies an advisory finding without you. Reach for a pair skill when you want the bugs proven and the idiom judged before you look, and for the single-agent skill when the diff is small enough that your own read at the gate is the review.
 
-   None of the five opens a pull request; each ends at commits on the branch you are on. When the work ships as a PR, **`/open-pr`** is the step after the build: it rescues commits stranded on `main` onto a properly named branch, asks which repo and base the PR targets, drafts the body from the diff alone, and stops at one **gate** before anything outward-facing happens.
+   None of the five opens a pull request; each ends at commits on the branch you are on. When the work ships as a PR, **`/open-pr`** is the step after the build: it rescues commits stranded on `main` onto a properly named branch, asks which repo and base the PR targets, drafts the body from the diff alone, and stops at one **gate** before anything outward-facing happens. **`/pr`** is the shape that body takes: the smallest visual that shows the change, before/after evidence that it works, and a one-way or two-way door call. `/open-pr` loads it for every body it drafts, and it's model-invoked, so the agent also reaches for it whenever it writes a PR body anywhere else.
 
-   **Branch: the whole ticket graph?** **`/implement-spec`** walks the ready frontier of a spec's tickets with concurrent implementer subagents in separate worktrees, merges their work onto one PR branch, and closes with `/code-review` and a final fixes worker. It opens a draft PR during the run and marks it ready at close-out. Reach for it when you want the entire graph built in one run. It is in progress and installed separately.
+   **Branch: the whole ticket graph?** **`/implement-spec`** reads a spec's tickets as a **task graph** and runs implementer subagents in separate worktrees across the ready **frontier** in parallel, merging their work onto one **integration branch**, then closes with `/code-review` and a final fixes worker. It opens a draft PR only when the issue tracker closes work through PRs or you ask for one. Reach for it when you'd rather orchestrate the build than drive each ticket yourself.
+
+4. **`/retro`** closes the loop. After a build, and especially one that went sideways, it looks back over the session and suggests changes to the agent's **environment**, not the code: navigation pointers, automated checks, the coding standards `/code-review` enforces, steering files, tooling. Mechanical mistakes become deterministic checks; judgement calls become coding standards. The next build then starts from a better environment.
 
 ### Context hygiene
 
-Keep steps 1–3 in **one unbroken context window** (don't compact or clear until after `/to-tickets`) so the grilling, spec, and tickets all build on the same thinking. Each `/implement` then starts fresh, working from the ticket.
+Keep steps 1–3 in **one unbroken context window** (don't compact or clear until after `/to-tickets`) so the grilling, spec, and tickets all build on the same thinking. Each `/implement` then starts fresh, working from the ticket. Run `/retro` in the session it's looking back on, before you clear; after clearing, point it at that session's log instead.
 
 The limit on this is the **[smart zone](https://www.aihero.dev/ai-coding-dictionary/smart-zone)**: the window (~150k tokens on state-of-the-art models) within which the model still reasons sharply. If a session approaches it before `/to-tickets`, don't push on degraded; `/compact` at the nearest phase boundary and carry on (see Phase boundaries).
 
@@ -49,7 +51,7 @@ A starting situation that generates work, then merges onto the main flow.
 
   Triage is only for issues **you didn't create**: bug reports, incoming feature requests, anything that arrives raw. Tickets that `/to-tickets` produced are already agent-ready, so **don't triage them**.
 
-- **Something's broken** → **`/diagnosing-bugs`**. For the hard ones: the bug that resists a first glance, the intermittent flake, the regression that crept in between two known-good states. It refuses to theorise until it has a **tight feedback loop** (one command that already goes red on *this* bug), then fixes with a regression test. Its post-mortem hands off to **`/improve-codebase-architecture`** when the real finding is that there's no good seam to lock the bug down.
+- **Something's broken** → **`/diagnosing-bugs`**. For the hard ones: the bug that resists a first glance, the intermittent flake, the regression that crept in between two known-good states. It refuses to theorise until it has a **tight feedback loop** (one command that already goes red on *this* bug), then fixes with a regression test. Once the fix is in, run **`/retro`** in the same session to ask what would have prevented the bug; where the real finding is that there's no good seam to lock it down, that's a job for **`/improve-codebase-architecture`**.
 
 - **A huge, foggy effort, a greenfield project or a huge feature build, too big for one session** → **`/wayfinder`**, the most cognitively demanding flow here. When the way from here to the destination isn't visible yet, it charts a **shared map** of **decision tickets** on the issue tracker and resolves them one at a time, producing **decisions, not deliverables**, until the fog is pushed back and the way is clear. Where **`/grill-with-docs`** sharpens an idea you can hold in one session, wayfinder is for the idea you can't, and it's slower and denser, so save it for exactly that, never a well-scoped feature.
 
@@ -60,12 +62,13 @@ A starting situation that generates work, then merges onto the main flow.
 Not feature work: upkeep.
 
 - **`/improve-codebase-architecture`**: run whenever you have a spare moment to keep the codebase good for agents to operate in. It surfaces **deepening opportunities**; picking one _generates an idea_ you can take into the main flow at `/grill-with-docs`. It's the survey that finds the candidates; **`/codebase-design`** (below) is the bench you design the chosen one on.
+- **`/setup-ts-deep-modules`** (in progress): run once in a TypeScript repo to make every package a **deep module** that the build enforces. It wires dependency-cruiser so a package's entry points (its root files) are the only way in, then proves the rules bite. `/codebase-design` names the shape; this turns it into a check that fails.
 
 ## Vocabulary underneath
 
 Two model-invoked references that run *beneath* the other skills, each the single source of truth for its vocabulary. Reach for them directly when the **words**, not the process, are the problem; or let the skills above pull them in.
 
-- **`/domain-modeling`**: sharpen the project's *domain* language: challenge a fuzzy term, resolve an overloaded word ("account" doing three jobs), record a hard-to-reverse decision as an ADR. It's the active discipline `/grill-with-docs` drives to keep `CONTEXT.md` a clean glossary.
+- **`/domain-modeling`**: sharpen the project's *domain* language: challenge a fuzzy term, resolve an overloaded word ("account" doing three jobs), record a hard-to-reverse decision as an ADR. It's the active discipline `/grill-with-docs` drives to keep `GLOSSARY.md` a clean glossary.
 - **`/codebase-design`**: the deep-module vocabulary (module, interface, depth, seam, adapter, leverage, locality) for designing a module's *shape*: a lot of behaviour behind a small interface at a clean seam. `/tdd` and `/improve-codebase-architecture` both speak it.
 
 ## Baselines underneath
@@ -82,7 +85,7 @@ A **phase** is a chunk of work inside a session: the grilling, the implementatio
 
 - **Continue**: stay put. Costs nothing, loses nothing.
 - **`/clear`**: empty the window, when nothing here matters to what's next.
-- **`/handoff`**: write a portable markdown file. Narrow: only for a **new harness**, a **new directory**, a **colleague**, or forking a side task **mid-phase**. What it buys is portability.
+- **`/handoff`**: write a portable markdown file. Narrow: only for a **new harness**, a **new directory**, a **colleague**, or forking a side task **mid-phase**. What it buys is portability. For the side-task fork in Claude Code, **`/claude-handoff`** (in progress) writes the same summary and launches a background agent on it in this directory, so the side task starts now and this session stays on its own phase.
 - **Subagent**: send a tightly-scoped task to its own window and get a report back.
 - **`/compact`**: compress this context and seed a fresh session with it. The **default**, at the bottom of the tree rather than the first reach.
 
@@ -92,19 +95,33 @@ Read [PHASE-BOUNDARIES.md](PHASE-BOUNDARIES.md) for the ordered tree: the five q
 
 Off the main flow entirely.
 
-- **`/grill-me`**: the same relentless interview as `/grill-with-docs`, but **stateless**: it saves nothing locally and builds no `CONTEXT.md`. Reach for it when you are **not working in a working directory**: sharpening a plan, a design, a piece of writing, anything with no repo under it. If you are in a working directory, use `/grill-with-docs` instead: it runs the same interview and leaves a paper trail, so it is strictly the better one.
+- **`/grill-me`**: the same relentless interview as `/grill-with-docs`, but **stateless**: it saves nothing locally and builds no `GLOSSARY.md`. Reach for it when you are **not working in a working directory**: sharpening a plan, a design, a piece of writing, anything with no repo under it. If you are in a working directory, use `/grill-with-docs` instead: it runs the same interview and leaves a paper trail, so it is strictly the better one.
 - **`/grilling`**: the interview primitive itself: rounds, the frontier, facts are the agent's job and decisions are yours. `/grill-me` and `/grill-with-docs` are the two named ways in, and `/triage`, `/wayfinder` and `/improve-codebase-architecture` all run it internally. Reach for it directly only when you want the interview with no wrapper around it.
-- **`/resolving-merge-conflicts`**: work an in-progress merge or rebase conflict hunk by hunk, resolving by **intent** traced to each side's primary source rather than by picking lines, then finish the operation. It never runs `--abort`. Standalone and off every flow: reach for it when you are already mid-conflict.
 - **`/prototype`**: a small, throwaway program that answers one design question: does this state model feel right, or what should this UI look like. Throwaway is a constraint on how the code is written, not a promise to destroy it: the answer folds into the real code, and the prototype itself is kept as a **primary source** on a `prototype/<name>` branch out of main, pointed at from the implementation issue. It's the detour in step 2 of the main flow, but reach for it any time a design question is hard to settle on paper.
 - **`/research`**: delegate reading legwork to a **background agent**: it investigates a question against **primary sources**, then leaves a cited Markdown file in the repo. Keep working while it reads. The file it produces is something to take *into* the main flow at `/grill-with-docs`: research feeds the thinking, it doesn't replace it.
 - **`/to-questionnaire`**: when the thing blocking you isn't in your head or the codebase but in **someone else's**, this writes them a questionnaire to fill in. It's the inverse of `/grill-me`: instead of interviewing you about the subject, it interviews you about the **send** (who it's going to, what you need back) and aims the questions at the gap. What comes back is material for `/grill-with-docs` or `/to-spec`.
 - **`/wizard`**: for the steps only a **human** can take: provisioning infrastructure, setting up credentials or CI secrets, clicking through an unfamiliar third-party dashboard, running a one-off migration or cutover. It generates an interactive bash script that opens each URL, captures each value, and writes it into `.env` and GitHub secrets, so the procedure stops being something you re-explain to an agent every time. Model-invoked, so the agent reaches for it the moment it hits a wall only you can pass. If the agent could just do it itself, it should; this is for where a human is genuinely in the loop.
-- **`/wait-what`**: the corrective for a message that didn't land. Use it mid-conversation, inside any other skill, and the agent re-pitches what it just said with the context you were missing, in plain English, using the `CONTEXT.md` vocabulary. It works after the fact; `/grill-with-docs` is the upfront cure, because a shared language agreed early is what stops the jargon arriving at all.
+- **`/wait-what`**: the corrective for a message that didn't land. Use it mid-conversation, inside any other skill, and the agent re-pitches what it just said with the context you were missing, in plain English, using the `GLOSSARY.md` vocabulary. It works after the fact; `/grill-with-docs` is the upfront cure, because a shared language agreed early is what stops the jargon arriving at all.
 - **`/teach`**: learn a concept over multiple sessions, using the current directory as a stateful workspace.
 - **`/writing-for-agents`**: reference for writing documents agents consume: skills, AGENTS.md, pointed-at docs.
+- **`/loop-me`** (in progress): a stateful `/grilling` whose only output is **workflow** specs, one `workflows/*.md` per recurring **loop** in your life worth delegating, grilled until an implementer agent could build it without asking a question. Where `/grill-with-docs` sharpens an idea for a codebase, this sharpens a routine.
+- **`/chief-of-staff`** (in progress, experimental): pursue a long-running goal in one long session that only orchestrates. Every piece of work goes to a subagent, and every turn also asks how to improve the environment for the next task. Where `/wayfinder` charts decisions across sessions and builds nothing, this one does the work, and keeps its own window for strategy.
+
+## Writing
+
+Off the engineering work entirely: turning what you know into an article, in two stages. All three skills are in progress.
+
+- **Explore** → **`/writing-fragments`**: a grilling session that mines you for **fragments** (a sharp sentence, a vignette, a half-thought, a **leading word**) and appends them to one markdown file. No structure yet; the pile is the output.
+- **Exploit** → commit to a path through the pile, one of two ways:
+  - **`/writing-shape`** when you want a thesis: pick from 2–3 candidate openings, each implying a different angle, then grow the article paragraph by paragraph, arguing each block's format.
+  - **`/writing-beats`** when you want the path to emerge: pick a starting **beat**, write only that, then pivot to one of 2–3 next beats until the journey ends.
+
+  Both settle up front what the reader already knows, and **ground** every other concept before a later block leans on it.
 
 ## Precondition
 
 **`/setup-matt-pocock-skills`**: run before your first engineering flow to configure the issue tracker, triage labels, and doc layout the other skills assume. Custom issue trackers also work.
 
-**The agents behind the pair flow**: `/full-review`, `/pair-by-commit`, and `/pair-by-plan` spawn the `implementer`, `bug-hunter`, and `craft-reviewer` agents, which live beside the skills rather than inside them. Install them into the harness before the first run (in this fork, `scripts/link-agents.sh` symlinks them). Those three skills and the three baselines are **in progress**: public on purpose, installed directly rather than through the plugin, and free to change.
+**The agents behind the pair flow**: `/full-review`, `/pair-by-commit`, and `/pair-by-plan` spawn the `implementer`, `bug-hunter`, and `craft-reviewer` agents, which live beside the skills rather than inside them. Install them into the harness before the first run (in this fork, `scripts/link-agents.sh` symlinks them).
+
+**In progress** means public on purpose, installed directly rather than through the plugin, and free to change. That covers those three skills, the three baselines, the writing skills, and every skill marked (in progress) above.
