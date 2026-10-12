@@ -35,7 +35,7 @@ Read the candidates (`origin`, and the parent repo where this is a fork, via `gh
 ### 4. Draft what the diff says
 
 - **Title**: imperative mood, ≤72 characters, in the repo's commit-subject convention.
-- **Body**: what the code does now, and only what is in the diff. Plain, factual language: a bug fix is a bug fix. (Never: critical, crucial, essential, significant, comprehensive, robust, elegant.)
+- **Body**: call the Skill tool with `pr` and fill its template. Every section says what the code does now, and only what is in the diff; the step 1 check runs are evidence to draw on. Plain, factual language: a bug fix is a bug fix. (Never: critical, crucial, essential, significant, comprehensive, robust, elegant.)
 - The body is the whole message. It ends at the last sentence: no trailers, no attribution lines, no generated-with footers.
 
 ### 5. The gate

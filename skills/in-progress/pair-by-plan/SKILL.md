@@ -18,7 +18,7 @@ The implementer is the `implementer` agent, spawned once and continued by messag
 
 Work from the spec, ticket, or issue passed as an argument: fetch it and read its full body and comments. With no argument, work from what is already in the conversation.
 
-Explore the codebase before planning. Read `CONTEXT.md` if it exists so commit messages and interface names use the project's domain vocabulary, and respect ADRs in the area you're touching.
+Explore the codebase before planning. Read `GLOSSARY.md` if it exists so commit messages and interface names use the project's domain vocabulary, and respect ADRs in the area you're touching.
 
 ### 2. Draft the commit plan
 
