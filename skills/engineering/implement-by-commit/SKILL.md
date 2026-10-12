@@ -16,7 +16,7 @@ The user is the reviewer. Every commit you write is something they will read.
 
 Work from the spec, ticket, or issue passed as an argument: fetch it and read its full body and comments. With no argument, work from what is already in the conversation.
 
-Explore the codebase before planning. Read `CONTEXT.md` if it exists so commit messages and interface names use the project's domain vocabulary, and respect ADRs in the area you're touching.
+Explore the codebase before planning. Read `GLOSSARY.md` if it exists so commit messages and interface names use the project's domain vocabulary, and respect ADRs in the area you're touching.
 
 The baselines named below are in-progress prerequisites installed separately from the promoted plugin. Check that "pragmatic-programming" and the language baselines needed for this target are available before starting the build.
 
